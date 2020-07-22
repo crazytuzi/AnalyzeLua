@@ -1,6 +1,7 @@
 /*
 ** $Id: lapi.c,v 2.259.1.2 2017/12/06 18:35:12 roberto Exp $
 ** Lua API
+** C语言接口
 ** See Copyright Notice in lua.h
 */
 

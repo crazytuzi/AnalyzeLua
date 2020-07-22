@@ -1,6 +1,7 @@
 /*
 ** $Id: ldo.c,v 2.157.1.1 2017/04/19 17:20:42 roberto Exp $
 ** Stack and Call structure of Lua
+** 函数调用以及栈管理
 ** See Copyright Notice in lua.h
 */
 

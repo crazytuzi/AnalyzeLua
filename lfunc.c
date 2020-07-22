@@ -1,6 +1,7 @@
 /*
 ** $Id: lfunc.c,v 2.45.1.1 2017/04/19 17:39:34 roberto Exp $
 ** Auxiliary functions to manipulate prototypes and closures
+** 函数原型及闭包管理
 ** See Copyright Notice in lua.h
 */
 

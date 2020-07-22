@@ -1,6 +1,7 @@
 /*
 ** $Id: ldump.c,v 2.37.1.1 2017/04/19 17:20:42 roberto Exp $
 ** save precompiled Lua chunks
+** 序列化预编译的Lua字节码
 ** See Copyright Notice in lua.h
 */
 

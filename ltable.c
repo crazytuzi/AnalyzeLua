@@ -1,6 +1,7 @@
 /*
 ** $Id: ltable.c,v 2.118.1.4 2018/06/08 16:22:51 roberto Exp $
 ** Lua tables (hash)
+** 表类型的相关操作
 ** See Copyright Notice in lua.h
 */
 

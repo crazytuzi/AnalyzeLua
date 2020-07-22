@@ -1,6 +1,7 @@
 /*
 ** $Id: loadlib.c,v 1.130.1.1 2017/04/19 17:20:42 roberto Exp $
 ** Dynamic library loader for Lua
+** 动态扩展库管理
 ** See Copyright Notice in lua.h
 **
 ** This module contains an implementation of loadlib for Unix systems
