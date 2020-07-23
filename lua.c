@@ -596,6 +596,7 @@ static int pmain (lua_State *L) {
 
 int main (int argc, char **argv) {
   int status, result;
+  /* 创建一个主线程数据结构 */
   lua_State *L = luaL_newstate();  /* create state */
   if (L == NULL) {
     l_message(argv[0], "cannot create state: not enough memory");

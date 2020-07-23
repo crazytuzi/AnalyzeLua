@@ -200,15 +200,17 @@ static void init_registry (lua_State *L, global_State *g) {
 /*
 ** open parts of the state that may cause memory-allocation errors.
 ** ('g->version' != NULL flags that the state was completely build)
+** 启动Lua程序
+** 初始化栈、初始化注册表、初始化字符串结构、初始化元方法、初始化保留字实现
 */
 static void f_luaopen (lua_State *L, void *ud) {
   global_State *g = G(L);
   UNUSED(ud);
-  stack_init(L, L);  /* init stack */
-  init_registry(L, g);
-  luaS_init(L);
-  luaT_init(L);
-  luaX_init(L);
+  stack_init(L, L);  /* init stack - 初始化栈 */
+  init_registry(L, g);  /* 初始化注册表 */
+  luaS_init(L);  /* 初始化字符串结构 */
+  luaT_init(L);  /* 初始化元方法 */
+  luaX_init(L);  /* 初始化保留字实现 */
   g->gcrunning = 1;  /* allow gc */
   g->version = lua_version(NULL);
   luai_userstateopen(L);
@@ -240,10 +242,13 @@ static void preinit_thread (lua_State *L, global_State *g) {
 }
 
 
+/*
+** 释放Lua栈结构
+*/
 static void close_state (lua_State *L) {
   global_State *g = G(L);
   luaF_close(L, L->stack);  /* close all upvalues for this thread */
-  luaC_freeallobjects(L);  /* collect all objects */
+  luaC_freeallobjects(L);  /* collect all objects - 释放全部对象 */
   if (g->version)  /* closing a fully built state? */
     luai_userstateclose(L);
   luaM_freearray(L, G(L)->strt.hash, G(L)->strt.size);
@@ -293,10 +298,20 @@ void luaE_freethread (lua_State *L, lua_State *L1) {
 }
 
 
+/*
+** 分配lua_State和global_State
+** global_State全局表会挂载在lua_State结构上,此方法分配的是主线程栈,如果实现协程,则通过lua_newthread分配新的lua_State栈
+** 通过LG结构方式,每个线程会独立维护自己的线程栈和函数栈
+** 对外通过lua_State结构暴露给用户,而global_State挂载在lua_State结构上
+** 主要管理全局数据,全局字符串表,内存管理函数,GC把所有对象串联起来的信息,内存等
+** global_State - 全局状态机
+** lua_State - 主线程结构
+*/
 LUA_API lua_State *lua_newstate (lua_Alloc f, void *ud) {
   int i;
   lua_State *L;
   global_State *g;
+  /* 分配一块lua_State结构的内容块 */
   LG *l = cast(LG *, (*f)(ud, NULL, LUA_TTHREAD, sizeof(LG)));
   if (l == NULL) return NULL;
   L = &l->l.l;
@@ -305,6 +320,7 @@ LUA_API lua_State *lua_newstate (lua_Alloc f, void *ud) {
   L->tt = LUA_TTHREAD;
   g->currentwhite = bitmask(WHITE0BIT);
   L->marked = luaC_white(g);
+  /* 初始化一个线程的栈结构数据 */
   preinit_thread(L, g);
   g->frealloc = f;
   g->ud = ud;
@@ -330,6 +346,7 @@ LUA_API lua_State *lua_newstate (lua_Alloc f, void *ud) {
   g->gcpause = LUAI_GCPAUSE;
   g->gcstepmul = LUAI_GCMUL;
   for (i=0; i < LUA_NUMTAGS; i++) g->mt[i] = NULL;
+  /* f_luaopen函数中调用了stack_init函数 */
   if (luaD_rawrunprotected(L, f_luaopen, NULL) != LUA_OK) {
     /* memory allocation error: free partial state */
     close_state(L);
@@ -339,6 +356,10 @@ LUA_API lua_State *lua_newstate (lua_Alloc f, void *ud) {
 }
 
 
+/*
+** 关闭Lua
+** 销毁主线程栈结构
+*/
 LUA_API void lua_close (lua_State *L) {
   L = G(L)->mainthread;  /* only the main thread can be closed */
   lua_lock(L);

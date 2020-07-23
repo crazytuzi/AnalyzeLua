@@ -133,15 +133,18 @@ typedef struct CallInfo {
 
 /*
 ** 'global state', shared by all threads of this state
+** Lua 全局状态机
+** 管理全局数据,全局字符串表,内存管理函数,GC把所有对象串联起来的信息,内存等
+** 
 */
 typedef struct global_State {
-  lua_Alloc frealloc;  /* function to reallocate memory */
-  void *ud;         /* auxiliary data to 'frealloc' */
+  lua_Alloc frealloc;  /* function to reallocate memory - Lua的全局内存分配器.用户可以替换成自己的 */
+  void *ud;         /* auxiliary data to 'frealloc' - 分配器的userdata */
   l_mem totalbytes;  /* number of bytes currently allocated - GCdebt */
   l_mem GCdebt;  /* bytes allocated not yet compensated by the collector */
   lu_mem GCmemtrav;  /* memory traversed by the GC */
   lu_mem GCestimate;  /* an estimate of the non-garbage memory in use */
-  stringtable strt;  /* hash table for strings */
+  stringtable strt;  /* hash table for strings - 字符串表 Lua的字符串分短字符串和长字符串 */
   TValue l_registry;
   unsigned int seed;  /* randomized seed for hashes */
   lu_byte currentwhite;
@@ -158,38 +161,73 @@ typedef struct global_State {
   GCObject *allweak;  /* list of all-weak tables */
   GCObject *tobefnz;  /* list of userdata to be GC */
   GCObject *fixedgc;  /* list of objects not to be collected */
-  struct lua_State *twups;  /* list of threads with open upvalues */
+  struct lua_State *twups;  /* list of threads with open upvalues - 闭包了当前线程变量的其他线程列表 */
   unsigned int gcfinnum;  /* number of finalizers to call in each GC step */
   int gcpause;  /* size of pause between successive GCs */
   int gcstepmul;  /* GC 'granularity' */
   lua_CFunction panic;  /* to be called in unprotected errors */
-  struct lua_State *mainthread;
-  const lua_Number *version;  /* pointer to version number */
+  struct lua_State *mainthread;  /* 主线程 */
+  const lua_Number *version;  /* pointer to version number - 版本号 */
   TString *memerrmsg;  /* memory-error message */
-  TString *tmname[TM_N];  /* array with tag-method names */
-  struct Table *mt[LUA_NUMTAGS];  /* metatables for basic types */
-  TString *strcache[STRCACHE_N][STRCACHE_M];  /* cache for strings in API */
+  TString *tmname[TM_N];  /* array with tag-method names - 预定义方法名字数组 */
+  struct Table *mt[LUA_NUMTAGS];  /* metatables for basic types - 每个基本类型一个metatable(整个Lua最重要的Hook机制) */
+  TString *strcache[STRCACHE_N][STRCACHE_M];  /* cache for strings in API - 字符串缓存 */
+  /*
+  ** 版本号
+  ** const lua_Number *version  版本号
+  **
+  ** 内存管理
+  ** lua_Alloc frealloc  Lua的全局内存分配器.用户可以替换成自己的
+  ** void *ud  分配器的userdata
+  **
+  ** 线程管理
+  ** struct lua_State  主线程
+  ** struct lua_State *twups  闭包了当前线程变量的其他线程列表
+  **
+  ** 字符串管理
+  ** stringtable strt  字符串表 Lua的字符串分短字符串和长字符串
+  ** TString *strcache[STRCACHE_N][STRCACHE_M]  字符串缓存
+  **
+  ** 虚函数表
+  ** TString *tmname[TM_N]  预定义方法名字数组
+  ** struct Table *mt[LUA_NUMTAGS]  每个基本类型一个metatable(整个Lua最重要的Hook机制)
+  **
+  ** 错误处理
+  ** lua_CFunction panic
+  ** TString *memerrmsg
+  **
+  ** GC管理
+  ** unsigned int gcfinnum
+  ** int gcpause
+  ** int gcstepmul
+  **
+  */
 } global_State;
 
 
 /*
 ** 'per thread' state
+** Lua 主线程 栈 数据结构
+** 管理整个栈和当前函数使用的栈的情况,最主要的功能就是函数调用以及和C的通信
+** 
 */
 struct lua_State {
   CommonHeader;
-  unsigned short nci;  /* number of items in 'ci' list */
-  lu_byte status;
-  StkId top;  /* first free slot in the stack */
-  global_State *l_G;
-  CallInfo *ci;  /* call info for current function */
-  const Instruction *oldpc;  /* last pc traced */
-  StkId stack_last;  /* last free slot in the stack */
-  StkId stack;  /* stack base */
-  UpVal *openupval;  /* list of open upvalues in this stack */
-  GCObject *gclist;
+  unsigned short nci;  /* number of items in 'ci' list - 存储一共多少个CallInfo */
+  lu_byte status;  /* 用于记录中间状态 */
+  /* StkId为TValue数据 */
+  StkId top;  /* first free slot in the stack - 线程栈的栈顶指针 */
+  global_State *l_G;  /* 全局状态机 */
+  /* CallInfo为双向链表结构 */
+  CallInfo *ci;  /* call info for current function - 当前运行函数信息 */
+  const Instruction *oldpc;  /* last pc traced - 在当前thread的解释执行指令的过程中,指向最后一次执行的指令的指针 */
+  StkId stack_last;  /* last free slot in the stack - 线程栈的最后一个位置 */
+  StkId stack;  /* stack base - 栈的指针,当前执行的位置 */
+  UpVal *openupval;  /* list of open upvalues in this stack - 上值列表 */
+  GCObject *gclist;  /* GC列表 */
   struct lua_State *twups;  /* list of threads with open upvalues */
   struct lua_longjmp *errorJmp;  /* current error recover point */
-  CallInfo base_ci;  /* CallInfo for first level (C calling Lua) */
+  CallInfo base_ci;  /* CallInfo for first level (C calling Lua) - 调用栈的头部指针 */
   volatile lua_Hook hook;
   ptrdiff_t errfunc;  /* current error handling function (stack index) */
   int stacksize;
@@ -199,6 +237,31 @@ struct lua_State {
   unsigned short nCcalls;  /* number of nested C calls */
   l_signalT hookmask;
   lu_byte allowhook;
+  /*
+  ** 调用栈: 调用栈信息管理
+  ** unsigned short nci  存储一共多少个CallInfo
+  ** CallInfo base_ci  调用栈的头部指针
+  ** CallInfo *ci  当前运行函数信息
+  ** 
+  ** 数据栈: 栈指针地址管理
+  ** StkId top  线程栈的栈顶指针
+  ** StkId stack_last  线程栈的最后一个位置
+  ** StkId stack  栈的指针,当前执行的位置
+  ** 
+  ** Hook相关管理 - 服务于debug模块
+  ** volatile lua_Hook hook
+  ** ptrdiff_t errfunc
+  ** int stacksize
+  ** int basehookcount
+  ** int hookcount
+  ** l_signalT hookmask
+  ** lu_byte allowhook
+  ** 
+  ** 跟C语言通信 管理
+  ** unsigned short nCcalls
+  ** unsigned short nny
+  **
+  */
 };
 
 
