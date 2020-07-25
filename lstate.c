@@ -149,26 +149,34 @@ void luaE_shrinkCI (lua_State *L) {
 }
 
 
+/*
+** 初始化栈(分为数据栈和调用栈)
+*/
 static void stack_init (lua_State *L1, lua_State *L) {
   int i; CallInfo *ci;
-  /* initialize stack array */
+  /* initialize stack array - 默认分配一个大小为40的栈 */
   L1->stack = luaM_newvector(L, BASIC_STACK_SIZE, TValue);
   L1->stacksize = BASIC_STACK_SIZE;
   for (i = 0; i < BASIC_STACK_SIZE; i++)
     setnilvalue(L1->stack + i);  /* erase new stack */
   L1->top = L1->stack;
+  /* 留空EXTRA_STACK=5个作为空闲buf,用于元表调用或错误处理的栈操作,
+     也就是说这些空闲buf可以让某些操作不用考虑栈空间是否足够 */
   L1->stack_last = L1->stack + L1->stacksize - EXTRA_STACK;
   /* initialize first ci */
   ci = &L1->base_ci;
   ci->next = ci->previous = NULL;
   ci->callstatus = 0;
-  ci->func = L1->top;
+  ci->func = L1->top;  /* 指向当前栈顶 */
   setnilvalue(L1->top++);  /* 'function' entry for this 'ci' */
-  ci->top = L1->top + LUA_MINSTACK;
+  ci->top = L1->top + LUA_MINSTACK; /* 指向当前栈顶 + LUA_MINSTACK=20的位置 */
   L1->ci = ci;
 }
 
 
+/*
+** 释放栈结构内存
+*/
 static void freestack (lua_State *L) {
   if (L->stack == NULL)
     return;  /* stack not completely built yet */

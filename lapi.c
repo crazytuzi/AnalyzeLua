@@ -88,6 +88,7 @@ static TValue *index2addr (lua_State *L, int idx) {
 /*
 ** to be called by 'lua_checkstack' in protected mode, to grow stack
 ** capturing memory errors
+** 针对lua_State进行扩容
 */
 static void growstack (lua_State *L, void *ud) {
   int size = *(int *)ud;
@@ -95,6 +96,13 @@ static void growstack (lua_State *L, void *ud) {
 }
 
 
+/*
+** 检查lua_State的大小(默认大小为35),如果栈小了,则扩容
+** 只会不断扩容,不会缩小
+** 32位/64位机器栈最大为1000000
+** 16位机器栈最大为15000
+** 对于需要在循环中不断压入元素的操作,应该调用lua_checkstack用于检查每次的栈大小
+*/
 LUA_API int lua_checkstack (lua_State *L, int n) {
   int res;
   CallInfo *ci = L->ci;
@@ -106,7 +114,7 @@ LUA_API int lua_checkstack (lua_State *L, int n) {
     int inuse = cast_int(L->top - L->stack) + EXTRA_STACK;
     if (inuse > LUAI_MAXSTACK - n)  /* can grow without overflow? */
       res = 0;  /* no */
-    else  /* try to grow stack */
+    else  /* try to grow stack - 尝试扩容 */
       res = (luaD_rawrunprotected(L, &growstack, &n) == LUA_OK);
   }
   if (res && ci->top < L->top + n)

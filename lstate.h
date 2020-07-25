@@ -88,10 +88,16 @@ typedef struct stringtable {
 ** When a function calls another with a continuation, 'extra' keeps
 ** the function index so that, in case of errors, the continuation
 ** function can be called with the correct top.
+** 正在调用的函数一定存在于数据栈上
+** func - 指向正在调用操作的栈底位置,也可以认为指向调用函数的位置
+** top - 指向调用栈的栈顶部分,默认是LUA_MINSTACK=20个,大部分情况下够用了,
+**       如果调用栈过大,则会抛出栈溢出的错误
+** previous和next是双向链表指针,用于连接各个调用栈,
+**       当执行完一个函数后,通过previous回退到上一个调用栈
 */
 typedef struct CallInfo {
-  StkId func;  /* function index in the stack */
-  StkId	top;  /* top for this function */
+  StkId func;  /* function index in the stack - 当前调用栈的调用指针处 */
+  StkId	top;  /* top for this function - 调用栈的栈顶 */
   struct CallInfo *previous, *next;  /* dynamic call link */
   union {
     struct {  /* only for Lua functions */
@@ -242,11 +248,25 @@ struct lua_State {
   ** unsigned short nci  存储一共多少个CallInfo
   ** CallInfo base_ci  调用栈的头部指针
   ** CallInfo *ci  当前运行函数信息
-  ** 
+  ** 主要由一个CallInfo的结构组成,CallInfo是一个双向链表结构,用来管理每一个Lua的函数调用栈信息
+  ** Lua一共有三种类型的函数:C语言闭包函数(如pmain)、Lua的C函数库(如str字符串函数)和Lua函数
+  ** 每一个函数的调用,都会产生一个新的CallInfo的调用栈结构,用于管理函数调用的栈指针信息
+  **    当一个函数调用结束后,会返回CallInfo链表的前一个调用栈,直到所有的调用栈结束回到base_ci
+  ** 调用栈最终都会指向数据栈上,通过一个个调用栈,用于管理不同的函数调用
+  ** 每次调用栈调用函数完成后,都会将函数返回的结果在栈上移动位置,将结果逐个从ci->func位置开始填充,
+  **    并调整top栈顶指针,这样的好处是调用完一个函数后,数据栈上只需要存储最终函数返回的结果集,
+  **    不会因为复杂的函数嵌套而导致整个栈体结构迅速扩大
+  **
   ** 数据栈: 栈指针地址管理
   ** StkId top  线程栈的栈顶指针
   ** StkId stack_last  线程栈的最后一个位置
   ** StkId stack  栈的指针,当前执行的位置
+  ** 主要由一个StkId结构的数组组成,StkId结构为TValue,支持字符串、函数、数字等数据结构
+  ** 所有的数据都通过lapi.c文件中的lua_push*函数将不同类型的值压栈
+  ** stack指向栈底部,每次将一个数据压栈,栈指针top都会指向下一个结构
+  ** stacksize为栈大小,在栈结构初始化的时候,会分配一个BASIC_STACK_SIZE=40大小的栈结构
+  ** stack_last指向栈头部,会留空EXTRA_STACK=5个buf,用于元表调用或错误处理的栈操作
+  ** top为栈顶指针,压入数据,都通过移动栈顶指针来实现
   ** 
   ** Hook相关管理 - 服务于debug模块
   ** volatile lua_Hook hook

@@ -175,6 +175,9 @@ static void correctstack (lua_State *L, TValue *oldstack) {
 #define ERRORSTACKSIZE	(LUAI_MAXSTACK + 200)
 
 
+/*
+** 重新分配一块stack内容,并且进行拷贝
+*/
 void luaD_reallocstack (lua_State *L, int newsize) {
   TValue *oldstack = L->stack;
   int lim = L->stacksize;
@@ -189,6 +192,9 @@ void luaD_reallocstack (lua_State *L, int newsize) {
 }
 
 
+/*
+** 对lua_State进行扩容
+*/
 void luaD_growstack (lua_State *L, int n) {
   int size = L->stacksize;
   if (size > LUAI_MAXSTACK)  /* error after extra size? */

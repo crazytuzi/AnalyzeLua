@@ -96,14 +96,15 @@ struct GCObject {
 
 /*
 ** Union of all Lua values
+** Lua数据类型分为值类型和引用类型,引用类型需要引入GC机制管理
 */
 typedef union Value {
-  GCObject *gc;    /* collectable objects */
-  void *p;         /* light userdata */
+  GCObject *gc;    /* collectable objects - 存放所有需要垃圾回收的类型的对象 */
+  void *p;         /* light userdata - 存放轻量用户数据类型 */
   int b;           /* booleans */
-  lua_CFunction f; /* light C functions */
-  lua_Integer i;   /* integer numbers */
-  lua_Number n;    /* float numbers */
+  lua_CFunction f; /* light C functions - 存放一个方法 */
+  lua_Integer i;   /* integer numbers - 存放int数字 */
+  lua_Number n;    /* float numbers - 存放float数字 */
 } Value;
 
 
