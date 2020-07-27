@@ -58,8 +58,14 @@ const char lua_ident[] =
 	api_check(l, isstackindex(i, o), "index not in the stack")
 
 
+/*
+** 通过指定索引值idx,寻找调用栈上L->top的栈分片TValue值
+** idx > 0 - 从操作栈底部开始寻找值
+** idx < 0 - 从操作栈栈顶开始寻找值
+*/
 static TValue *index2addr (lua_State *L, int idx) {
   CallInfo *ci = L->ci;
+  /* idx > 0 - 从操作栈底部开始寻找值 */
   if (idx > 0) {
     TValue *o = ci->func + idx;
     api_check(L, idx <= ci->top - (ci->func + 1), "unacceptable index");
@@ -73,6 +79,7 @@ static TValue *index2addr (lua_State *L, int idx) {
   else if (idx == LUA_REGISTRYINDEX)
     return &G(L)->l_registry;
   else {  /* upvalues */
+    /* idx < 0 - 从操作栈栈顶开始寻找值 */
     idx = LUA_REGISTRYINDEX - idx;
     api_check(L, idx <= MAXUPVAL + 1, "upvalue index too large");
     if (ttislcf(ci->func))  /* light C function? */
@@ -124,6 +131,9 @@ LUA_API int lua_checkstack (lua_State *L, int n) {
 }
 
 
+/*
+** 从*from虚拟机结构上向*to虚拟机结构上拷贝n个栈分片内容
+*/
 LUA_API void lua_xmove (lua_State *from, lua_State *to, int n) {
   int i;
   if (from == to) return;
@@ -173,11 +183,19 @@ LUA_API int lua_absindex (lua_State *L, int idx) {
 }
 
 
+/*
+** 返回Lua栈的个数
+** 同时也是栈顶元素的索引,因为栈底是1
+*/
 LUA_API int lua_gettop (lua_State *L) {
   return cast_int(L->top - (L->ci->func + 1));
 }
 
 
+/*
+** 设置栈的高度
+** 如果之前的栈顶比新设置的更高,那么高出来的元素会被丢弃,反之压入nil来补足大小
+*/
 LUA_API void lua_settop (lua_State *L, int idx) {
   StkId func = L->ci->func;
   lua_lock(L);
@@ -257,12 +275,18 @@ LUA_API void lua_pushvalue (lua_State *L, int idx) {
 */
 
 
+/*
+** 类型
+*/
 LUA_API int lua_type (lua_State *L, int idx) {
   StkId o = index2addr(L, idx);
   return (isvalid(o) ? ttnov(o) : LUA_TNONE);
 }
 
 
+/*
+** 类型枚举转成类型名称
+*/
 LUA_API const char *lua_typename (lua_State *L, int t) {
   UNUSED(L);
   api_check(L, LUA_TNONE <= t && t < LUA_NUMTAGS, "invalid tag");
@@ -270,18 +294,27 @@ LUA_API const char *lua_typename (lua_State *L, int t) {
 }
 
 
+/*
+** 判断是否为函数
+*/
 LUA_API int lua_iscfunction (lua_State *L, int idx) {
   StkId o = index2addr(L, idx);
   return (ttislcf(o) || (ttisCclosure(o)));
 }
 
 
+/*
+** 判断是否为整型
+*/
 LUA_API int lua_isinteger (lua_State *L, int idx) {
   StkId o = index2addr(L, idx);
   return ttisinteger(o);
 }
 
 
+/*
+** 判断是否为浮点数
+*/
 LUA_API int lua_isnumber (lua_State *L, int idx) {
   lua_Number n;
   const TValue *o = index2addr(L, idx);
@@ -289,18 +322,27 @@ LUA_API int lua_isnumber (lua_State *L, int idx) {
 }
 
 
+/*
+** 判断是否为字符串
+*/
 LUA_API int lua_isstring (lua_State *L, int idx) {
   const TValue *o = index2addr(L, idx);
   return (ttisstring(o) || cvt2str(o));
 }
 
 
+/*
+** 判断是否为用户数据
+*/
 LUA_API int lua_isuserdata (lua_State *L, int idx) {
   const TValue *o = index2addr(L, idx);
   return (ttisfulluserdata(o) || ttislightuserdata(o));
 }
 
 
+/*
+** 判断两个索引对应的值是否一样,如果一样返回1,否则返回0
+*/
 LUA_API int lua_rawequal (lua_State *L, int index1, int index2) {
   StkId o1 = index2addr(L, index1);
   StkId o2 = index2addr(L, index2);
@@ -350,7 +392,16 @@ LUA_API size_t lua_stringtonumber (lua_State *L, const char *s) {
   return sz;
 }
 
+/*
+** Lua从栈上获取数据,主要通过index2addr函数,寻找到操作栈CallInfo上的栈指针地址,然后获取数据
+** idx > 0 - 从操作栈底部开始寻找值
+** idx < 0 - 从操作栈栈顶开始寻找值
+*/
 
+
+/*
+** 将索引处的值转换为lua_Number类型
+*/
 LUA_API lua_Number lua_tonumberx (lua_State *L, int idx, int *pisnum) {
   lua_Number n;
   const TValue *o = index2addr(L, idx);
@@ -362,6 +413,10 @@ LUA_API lua_Number lua_tonumberx (lua_State *L, int idx, int *pisnum) {
 }
 
 
+/*
+** 将索引处的值转换为lua_Integer类型
+** 必须为数字/字符串类型数字
+*/
 LUA_API lua_Integer lua_tointegerx (lua_State *L, int idx, int *pisnum) {
   lua_Integer res;
   const TValue *o = index2addr(L, idx);
@@ -373,12 +428,23 @@ LUA_API lua_Integer lua_tointegerx (lua_State *L, int idx, int *pisnum) {
 }
 
 
+/*
+** 将索引处的值转换为boolean(0或1)
+** 会把任何不同于false和nil的值当做1返回,否则就返回0
+** 如果用一个无效索引去调用也会返回0
+*/
 LUA_API int lua_toboolean (lua_State *L, int idx) {
   const TValue *o = index2addr(L, idx);
   return !l_isfalse(o);
 }
 
 
+/*
+** 将索引处的值转换为C字符串
+** 如果len不为NULL,还把字符串长度设置到*len,
+** 必须是一个字符串或者一个数字,否则返回NULL
+** 如果是一个数字,还会将栈中的那个值的实际类型转换为一个字符串
+*/
 LUA_API const char *lua_tolstring (lua_State *L, int idx, size_t *len) {
   StkId o = index2addr(L, idx);
   if (!ttisstring(o)) {
@@ -410,6 +476,9 @@ LUA_API size_t lua_rawlen (lua_State *L, int idx) {
 }
 
 
+/*
+** 将索引处的值转换为C函数
+*/
 LUA_API lua_CFunction lua_tocfunction (lua_State *L, int idx) {
   StkId o = index2addr(L, idx);
   if (ttislcf(o)) return fvalue(o);
@@ -419,6 +488,9 @@ LUA_API lua_CFunction lua_tocfunction (lua_State *L, int idx) {
 }
 
 
+/*
+** 将索引处的值转换为用户数据
+*/
 LUA_API void *lua_touserdata (lua_State *L, int idx) {
   StkId o = index2addr(L, idx);
   switch (ttnov(o)) {
@@ -429,12 +501,20 @@ LUA_API void *lua_touserdata (lua_State *L, int idx) {
 }
 
 
+/*
+** 将索引处的值转换为Lua线程(由lua_State*代表)
+** 这个值必须是一个线程,否则函数返回NULL
+*/
 LUA_API lua_State *lua_tothread (lua_State *L, int idx) {
   StkId o = index2addr(L, idx);
   return (!ttisthread(o)) ? NULL : thvalue(o);
 }
 
 
+/*
+** 将索引处的值转换为一般的C指针(void*)
+** 这个值可以是一个userdata,table,thread或者function
+*/
 LUA_API const void *lua_topointer (lua_State *L, int idx) {
   StkId o = index2addr(L, idx);
   switch (ttype(o)) {
@@ -456,6 +536,9 @@ LUA_API const void *lua_topointer (lua_State *L, int idx) {
 */
 
 
+/*
+** 压入一个nil到栈L->top上
+*/
 LUA_API void lua_pushnil (lua_State *L) {
   lua_lock(L);
   setnilvalue(L->top);
@@ -464,6 +547,9 @@ LUA_API void lua_pushnil (lua_State *L) {
 }
 
 
+/*
+** 压入一个浮点数到栈L->top上
+*/
 LUA_API void lua_pushnumber (lua_State *L, lua_Number n) {
   lua_lock(L);
   setfltvalue(L->top, n);
@@ -472,6 +558,9 @@ LUA_API void lua_pushnumber (lua_State *L, lua_Number n) {
 }
 
 
+/*
+** 压入一个整数到栈L->top上
+*/
 LUA_API void lua_pushinteger (lua_State *L, lua_Integer n) {
   lua_lock(L);
   setivalue(L->top, n);
@@ -484,6 +573,7 @@ LUA_API void lua_pushinteger (lua_State *L, lua_Integer n) {
 ** Pushes on the stack a string with given length. Avoid using 's' when
 ** 'len' == 0 (as 's' can be NULL in that case), due to later use of
 ** 'memcmp' and 'memcpy'.
+** 压入一个字符串到栈L->top上
 */
 LUA_API const char *lua_pushlstring (lua_State *L, const char *s, size_t len) {
   TString *ts;
@@ -497,13 +587,20 @@ LUA_API const char *lua_pushlstring (lua_State *L, const char *s, size_t len) {
 }
 
 
+/*
+** Lua针对需要垃圾回收的元素,在压入栈时,都会在Lua(也就是Lua虚拟机中)生成一个副本
+** C里面的值,在被压入栈时,Lua不会再依赖这个值,而是通过拷贝副本的方式,自己管理对应的值
+** 以lua_pushstring为例,压入一个字符串值时,会将字符串生成一个内部副本
+** Lua不会持有指向外部字符串的指针,也不会持有任何其他外部对象的指针(除了C函数,因为C函数总是静态的)
+** 压入一个字符串到栈L->top上
+*/
 LUA_API const char *lua_pushstring (lua_State *L, const char *s) {
   lua_lock(L);
   if (s == NULL)
     setnilvalue(L->top);
   else {
     TString *ts;
-    ts = luaS_new(L, s);
+    ts = luaS_new(L, s);  /* 拷贝一个副本 */
     setsvalue2s(L, L->top, ts);
     s = getstr(ts);  /* internal copy's address */
   }
@@ -514,6 +611,9 @@ LUA_API const char *lua_pushstring (lua_State *L, const char *s) {
 }
 
 
+/*
+** 压入一个字符串到栈L->top上
+*/
 LUA_API const char *lua_pushvfstring (lua_State *L, const char *fmt,
                                       va_list argp) {
   const char *ret;
@@ -525,6 +625,9 @@ LUA_API const char *lua_pushvfstring (lua_State *L, const char *fmt,
 }
 
 
+/*
+** 压入一个字符串到栈L->top上
+*/
 LUA_API const char *lua_pushfstring (lua_State *L, const char *fmt, ...) {
   const char *ret;
   va_list argp;
@@ -538,6 +641,9 @@ LUA_API const char *lua_pushfstring (lua_State *L, const char *fmt, ...) {
 }
 
 
+/*
+** 压入一个C闭包函数到栈L->top上
+*/
 LUA_API void lua_pushcclosure (lua_State *L, lua_CFunction fn, int n) {
   lua_lock(L);
   if (n == 0) {
@@ -563,6 +669,9 @@ LUA_API void lua_pushcclosure (lua_State *L, lua_CFunction fn, int n) {
 }
 
 
+/*
+** 压入一个布尔值到栈L->top上
+*/
 LUA_API void lua_pushboolean (lua_State *L, int b) {
   lua_lock(L);
   setbvalue(L->top, (b != 0));  /* ensure that true is 1 */
@@ -571,6 +680,9 @@ LUA_API void lua_pushboolean (lua_State *L, int b) {
 }
 
 
+/*
+** 压入一个轻量用户数据到栈L->top上
+*/
 LUA_API void lua_pushlightuserdata (lua_State *L, void *p) {
   lua_lock(L);
   setpvalue(L->top, p);
@@ -579,6 +691,10 @@ LUA_API void lua_pushlightuserdata (lua_State *L, void *p) {
 }
 
 
+/*
+** 压入一个线程到栈L->top上
+** Lua线程不是OS线程,是协程
+*/
 LUA_API int lua_pushthread (lua_State *L) {
   lua_lock(L);
   setthvalue(L, L->top, L);
