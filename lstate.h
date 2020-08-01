@@ -177,6 +177,12 @@ typedef struct global_State {
   TString *memerrmsg;  /* memory-error message */
   TString *tmname[TM_N];  /* array with tag-method names - 预定义方法名字数组 */
   struct Table *mt[LUA_NUMTAGS];  /* metatables for basic types - 每个基本类型一个metatable(整个Lua最重要的Hook机制) */
+  /*
+  ** 二维数组strcache的表索引,通过字符串hash值,并对桶做求余实现
+  ** 桶的默认值是STRCACHE_N=53个
+  ** 链表的默认长度是STRCACHE_M=2个
+  ** 估计作者认为hash冲突的概率会非常小,同时每次都会将最早的元素淘汰出去
+  */
   TString *strcache[STRCACHE_N][STRCACHE_M];  /* cache for strings in API - 字符串缓存 */
   /*
   ** 版本号
@@ -191,8 +197,8 @@ typedef struct global_State {
   ** struct lua_State *twups  闭包了当前线程变量的其他线程列表
   **
   ** 字符串管理
-  ** stringtable strt  字符串表 Lua的字符串分短字符串和长字符串
-  ** TString *strcache[STRCACHE_N][STRCACHE_M]  字符串缓存
+  ** stringtable strt  链式存储(短字符串<40)
+  ** TString *strcache[STRCACHE_N][STRCACHE_M]  Hash缓存
   **
   ** 虚函数表
   ** TString *tmname[TM_N]  预定义方法名字数组

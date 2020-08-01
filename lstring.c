@@ -100,6 +100,7 @@ void luaS_resize (lua_State *L, int newsize) {
 /*
 ** Clear API string cache. (Entries cannot be empty, so fill them with
 ** a non-collectable string.)
+** 清除缓存
 */
 void luaS_clearcache (global_State *g) {
   int i, j;
@@ -113,15 +114,17 @@ void luaS_clearcache (global_State *g) {
 
 /*
 ** Initialize the string table and the string cache
+** 初始化字符串池
+** 包括初始化链表和初始化缓存池
 */
 void luaS_init (lua_State *L) {
   global_State *g = G(L);
   int i, j;
-  luaS_resize(L, MINSTRTABSIZE);  /* initial size of string table */
-  /* pre-create memory-error message */
+  luaS_resize(L, MINSTRTABSIZE); /* initial size of string table - 默认大小MINSTRTABSIZE=128个字符串 */
+  /* pre-create memory-error message - 错误处理字符串 */
   g->memerrmsg = luaS_newliteral(L, MEMERRMSG);
   luaC_fix(L, obj2gco(g->memerrmsg));  /* it should never be collected */
-  for (i = 0; i < STRCACHE_N; i++)  /* fill cache with valid strings */
+  for (i = 0; i < STRCACHE_N; i++)  /* fill cache with valid strings - 缓存表中填充默认字符 */
     for (j = 0; j < STRCACHE_M; j++)
       g->strcache[i][j] = g->memerrmsg;
 }
@@ -196,16 +199,19 @@ static TString *internshrstr (lua_State *L, const char *str, size_t l) {
 
 /*
 ** new string (with explicit length)
+** 创建一个新的字符串,不带缓存方式
+** 字符串不能超过最大限制
+** 新的字符串会memcpy一个副本,挂载到TString结构上
 */
 TString *luaS_newlstr (lua_State *L, const char *str, size_t l) {
-  if (l <= LUAI_MAXSHORTLEN)  /* short string? */
+  if (l <= LUAI_MAXSHORTLEN)  /* short string? - 40字节 */
     return internshrstr(L, str, l);
   else {
     TString *ts;
     if (l >= (MAX_SIZE - sizeof(TString))/sizeof(char))
       luaM_toobig(L);
     ts = luaS_createlngstrobj(L, l);
-    memcpy(getstr(ts), str, l * sizeof(char));
+    memcpy(getstr(ts), str, l * sizeof(char));  /* 内存拷贝副本 */
     return ts;
   }
 }
@@ -216,9 +222,15 @@ TString *luaS_newlstr (lua_State *L, const char *str, size_t l) {
 ** cache (using the string address as a key). The cache can contain
 ** only zero-terminated strings, so it is safe to use 'strcmp' to
 ** check hits.
+** 创建一个新的字符串,带缓存方式
+** 会调用luaS_newlstr方法
+** 1. 先通过字符串,获取字符串hash值
+** 2. 通过hash值取字符串,如果存在相同的字符串,则复用
+** 3. 否则创建一个新的字符串
+** 4. 同时每次都会将最早的元素淘汰出去
 */
 TString *luaS_new (lua_State *L, const char *str) {
-  unsigned int i = point2uint(str) % STRCACHE_N;  /* hash */
+  unsigned int i = point2uint(str) % STRCACHE_N;  /* hash - hash计算方式 */
   int j;
   TString **p = G(L)->strcache[i];
   for (j = 0; j < STRCACHE_M; j++) {

@@ -300,15 +300,16 @@ typedef TValue *StkId;  /* index to stack elements */
 /*
 ** Header for string value; string bytes follow the end of this structure
 ** (aligned according to 'UTString'; see next).
+** 字符串结构
 */
 typedef struct TString {
   CommonHeader;
   lu_byte extra;  /* reserved words for short strings; "has hash" for longs */
-  lu_byte shrlen;  /* length for short strings */
-  unsigned int hash;
+  lu_byte shrlen;  /* length for short strings - 字符串长度 */
+  unsigned int hash;  /* hash值,字符串table索引值 */
   union {
-    size_t lnglen;  /* length for long strings */
-    struct TString *hnext;  /* linked list for hash table */
+    size_t lnglen;  /* length for long strings - 长字符串存储形式 */
+    struct TString *hnext; /* linked list for hash table - 短字符串存储形式,存储下一个TString */
   } u;
 } TString;
 
