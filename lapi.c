@@ -806,6 +806,11 @@ LUA_API int lua_rawgetp (lua_State *L, int idx, const void *p) {
 }
 
 
+/*
+** 创建一个table,固定长度,并将之放在栈顶
+** narray是该table数组部分的长度
+** nrec是该tableHash部分的长度
+*/
 LUA_API void lua_createtable (lua_State *L, int narray, int nrec) {
   Table *t;
   lua_lock(L);

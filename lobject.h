@@ -477,7 +477,7 @@ typedef union Closure {
 typedef union TKey {
   struct {
     TValuefields;
-    int next;  /* for chaining (offset for next node) */
+    int next;  /* for chaining (offset for next node) - 链表,管理Hash Node,用于处理Hash冲突 */
   } nk;
   TValue tvk;
 } TKey;
@@ -490,21 +490,39 @@ typedef union TKey {
 	  (void)L; checkliveness(L,io_); }
 
 
+/*
+** 节点格式 k=>v
+*/
 typedef struct Node {
   TValue i_val;
   TKey i_key;
 } Node;
 
 
+/*
+** Table有两个特性:
+** Table使用关联数组,可以用任意类型来作为数组的索引键值
+** Table没有固定大小,可以动态扩容
+** 主要由两种类型组成
+** 数组节点形式:
+**     一般存储key值在长度范围内的结果集
+**     TValue *array,通过数组形式,实现值的存储
+**     要求table的key必须为数字,并且数字小于数组长度sizearray
+** Hash节点形式:
+**     k=>v结构,能够存储各类复杂对象结构
+**     Node *node,通过Hash表的方式来存储Node节点,Node节点包含key和value,
+**     key和value可以为任意类型,通过TKey结构中的next链表指针实现,
+**     key和value最终指向TValue结构,该结构支持多种类型
+*/
 typedef struct Table {
   CommonHeader;
   lu_byte flags;  /* 1<<p means tagmethod(p) is not present */
-  lu_byte lsizenode;  /* log2 of size of 'node' array */
+  lu_byte lsizenode;  /* log2 of size of 'node' array - 节点个数 */
   unsigned int sizearray;  /* size of 'array' array */
-  TValue *array;  /* array part */
-  Node *node;
-  Node *lastfree;  /* any free position is before this position */
-  struct Table *metatable;
+  TValue *array;  /* array part - 数组 */
+  Node *node;  /* Hash节点,指向Hash表的起始位置 */
+  Node *lastfree;  /* any free position is before this position - Hash节点,指向Hash表的最后一个空闲节点 */
+  struct Table *metatable;  /* 元表,用于重载操作 */
   GCObject *gclist;
 } Table;
 

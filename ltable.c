@@ -114,6 +114,7 @@ static int l_hashfloat (lua_Number n) {
 /*
 ** returns the 'main' position of an element in a table (that is, the index
 ** of its hash value)
+** 通过Hash找到Node
 */
 static Node *mainposition (const Table *t, const TValue *key) {
   switch (ttype(key)) {
@@ -345,6 +346,12 @@ static void auxsetnode (lua_State *L, void *ud) {
 }
 
 
+/*
+** 设置数组节点的大小和Hash节点的大小
+** luaH_new函数仅仅是初始化了一个Table,真正Table大小,需要调用此函数实现
+** nasize - 数组节点的大小
+** nhsize - Hash节点的大小
+*/
 void luaH_resize (lua_State *L, Table *t, unsigned int nasize,
                                           unsigned int nhsize) {
   unsigned int i;
@@ -419,18 +426,43 @@ static void rehash (lua_State *L, Table *t, const TValue *ek) {
 */
 
 
+/*
+** Table的初始化,主要对数组节点和Hash节点两个数据结构进行内存分配和初始化
+** 一般Table的初始化函数为luaH_new,该函数是真正意义上的初始化,仅仅对Table数据结构进行了初始化,
+** 但是并没有初始化array和node,需要通过luaH_resize函数,针对数组节点和Hash节点进行内存分配和初始化
+** 在lapi.c中,有一个函数lua_createtable,封装了Table的整个初始化过程,一般调用该函数使用table更加合理,
+** 该函数默认指定了数组节点和Hash节点的长度
+*/
+
+
+/*
+** 创建一个table,table内容由luaC_newobj创建分配,并且会挂载到global_State->frealloc上统一管理
+*/
 Table *luaH_new (lua_State *L) {
   GCObject *o = luaC_newobj(L, LUA_TTABLE, sizeof(Table));
-  Table *t = gco2t(o);
+  Table *t = gco2t(o);  /* 分配一个Table类型的内容,对象在global_State->frealloc上统一管理 */
   t->metatable = NULL;
   t->flags = cast_byte(~0);
   t->array = NULL;
   t->sizearray = 0;
-  setnodevector(L, t, 0);
+  setnodevector(L, t, 0);  /* 设置节点空间 */
   return t;
 }
 
 
+/*
+** Table的释放相对比较简单,只要对对应的内存块进行释放即可
+** 由于Table表的内存分配都是走Lua内部统一的内存管理机制(lmem.c),分配的时候会调用luaM_*方法,
+** 所以在释放Table的时候,统一走释放函数即可
+** Lua的内容都是由全局内存分配器global_State->frealloc来管理的
+*/
+
+
+/*
+** 销毁一个Table
+** 先释放node节点
+** 再释放array数组
+*/
 void luaH_free (lua_State *L, Table *t) {
   if (!isdummy(t))
     luaM_freearray(L, t->node, cast(size_t, sizenode(t)));
@@ -458,32 +490,36 @@ static Node *getfreepos (Table *t) {
 ** position or not: if it is not, move colliding node to an empty place and
 ** put new key in its main position; otherwise (colliding node is in its main
 ** position), new key goes to an empty position.
+** 插入一个新key到Hash表中
+** 首先,检查key对应的mainposition是否是空,如果不是,则检查冲突的node是不是mainposition,
+** 如果不是,就将冲突的node移到一个新的空位置,将新key放到mainposition
+** 如果冲突的点已经是mainposition,则将新key放到一个空白点
 */
 TValue *luaH_newkey (lua_State *L, Table *t, const TValue *key) {
   Node *mp;
   TValue aux;
-  if (ttisnil(key)) luaG_runerror(L, "table index is nil");
+  if (ttisnil(key)) luaG_runerror(L, "table index is nil");  /* 检查key值是否是空值 */
   else if (ttisfloat(key)) {
     lua_Integer k;
-    if (luaV_tointeger(key, &k, 0)) {  /* does index fit in an integer? */
+    if (luaV_tointeger(key, &k, 0)) {  /* does index fit in an integer? - 浮点类型,如果可以转int的话,强制转成int */
       setivalue(&aux, k);
       key = &aux;  /* insert it as an integer */
     }
     else if (luai_numisnan(fltvalue(key)))
       luaG_runerror(L, "table index is NaN");
   }
-  mp = mainposition(t, key);
-  if (!ttisnil(gval(mp)) || isdummy(t)) {  /* main position is taken? */
+  mp = mainposition(t, key);  /* 拿到key可以存放的node */
+  if (!ttisnil(gval(mp)) || isdummy(t)) {  /* main position is taken? - 如果存在 */
     Node *othern;
-    Node *f = getfreepos(t);  /* get a free place */
+    Node *f = getfreepos(t);  /* get a free place - 扩容 */
     if (f == NULL) {  /* cannot find a free place? */
-      rehash(L, t, key);  /* grow table */
+      rehash(L, t, key);  /* grow table - 扩容 */
       /* whatever called 'newkey' takes care of TM cache */
       return luaH_set(L, t, key);  /* insert key into grown table */
     }
     lua_assert(!isdummy(t));
     othern = mainposition(t, gkey(mp));
-    if (othern != mp) {  /* is colliding node out of its main position? */
+    if (othern != mp) {  /* is colliding node out of its main position? - 此处需要解决hash冲突 */
       /* yes; move colliding node into free position */
       while (othern + gnext(othern) != mp)  /* find previous */
         othern += gnext(othern);
@@ -504,10 +540,10 @@ TValue *luaH_newkey (lua_State *L, Table *t, const TValue *key) {
       mp = f;
     }
   }
-  setnodekey(L, &mp->i_key, key);
+  setnodekey(L, &mp->i_key, key);  /* 拷贝到node上 */
   luaC_barrierback(L, t, key);
   lua_assert(ttisnil(gval(mp)));
-  return gval(mp);
+  return gval(mp);  /* 返回Node->i_val */
 }
 
 
@@ -605,8 +641,20 @@ const TValue *luaH_get (Table *t, const TValue *key) {
 
 
 /*
+** Table设值操作主要有两个函数:luaH_set和luaH_setint
+** luaH_set主要在table上设置一个值,并返回TValue对象
+** luaH_setint主要在Table上设置key为数字类型的节点
+** 两者都会优先去判断,key值是否是数字类型,并且数字小于数组的长度,则走数组节点,
+** 否则都会调用luaH_newkey,走Hash节点
+*/
+
+
+/*
 ** beware: when using this function you probably need to check a GC
 ** barrier and invalidate the TM cache.
+** 在Table上设置一个值,然后返回TValue对象
+** 优先在t->array数组上查询,是否有节点可以存储,如果key小于arraysize,则放置在array上
+** 调用luaH_newkey,在table上寻找可以设置key的node节点,设置成功后,返回Node->i_val
 */
 TValue *luaH_set (lua_State *L, Table *t, const TValue *key) {
   const TValue *p = luaH_get(t, key);
@@ -616,6 +664,12 @@ TValue *luaH_set (lua_State *L, Table *t, const TValue *key) {
 }
 
 
+/*
+** 在Table上设置key为数字类型的节点
+** 优先在t->array数组上查询,是否有节点可以存储,如果key小于arraysize,则放置在array上
+** 如果数字大于arraysize,则在Node节点上处理
+** 如果没有查询到p,则调用luaH_newkey创建一个新的Node节点用于存储value
+*/
 void luaH_setint (lua_State *L, Table *t, lua_Integer key, TValue *value) {
   const TValue *p = luaH_getint(t, key);
   TValue *cell;
