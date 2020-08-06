@@ -330,7 +330,7 @@ LUA_API lua_State *lua_newstate (lua_Alloc f, void *ud) {
   L->marked = luaC_white(g);
   /* 初始化一个线程的栈结构数据 */
   preinit_thread(L, g);
-  g->frealloc = f;
+  g->frealloc = f;  /* 赋值 */
   g->ud = ud;
   g->mainthread = L;
   g->seed = makeseed(L);

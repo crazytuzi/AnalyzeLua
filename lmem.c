@@ -46,6 +46,11 @@
 #define MINSIZEARRAY	4
 
 
+/*
+** 内存扩容
+** 扩容不能超过limit限制,如果超过了,则扩容到limit
+** 一般扩容按照扩容因子=2去扩容
+*/
 void *luaM_growaux_ (lua_State *L, void *block, int *size, size_t size_elems,
                      int limit, const char *what) {
   void *newblock;
@@ -74,6 +79,8 @@ l_noret luaM_toobig (lua_State *L) {
 
 /*
 ** generic allocation routine.
+** 内存分配函数
+** 内存块最终会调用*g->frealloc(*l_alloc)函数处理
 */
 void *luaM_realloc_ (lua_State *L, void *block, size_t osize, size_t nsize) {
   void *newblock;

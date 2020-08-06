@@ -1006,14 +1006,21 @@ LUALIB_API const char *luaL_gsub (lua_State *L, const char *s, const char *p,
 }
 
 
+/*
+** 内存分配函数
+** 当nsize分配内存大小为0,则调用free进行释放
+** 当nsize分配内存大小不为0,则调用realloc分配一块内存
+** Lua没有自己的内存分配管理器,依赖于操作系统本身的内存分配器,
+** 所以就必须注意,内存频繁分配造成的内存碎片增加
+*/
 static void *l_alloc (void *ud, void *ptr, size_t osize, size_t nsize) {
   (void)ud; (void)osize;  /* not used */
   if (nsize == 0) {
-    free(ptr);
+    free(ptr);  /* 释放指针 */
     return NULL;
   }
   else
-    return realloc(ptr, nsize);
+    return realloc(ptr, nsize);  /* 分配内存 */
 }
 
 
@@ -1024,8 +1031,11 @@ static int panic (lua_State *L) {
 }
 
 
+/*
+** 创建一个全局状态机
+*/
 LUALIB_API lua_State *luaL_newstate (void) {
-  lua_State *L = lua_newstate(l_alloc, NULL);
+  lua_State *L = lua_newstate(l_alloc, NULL);  /* 将l_alloc函数对象赋值到g->frealloc */
   if (L) lua_atpanic(L, &panic);
   return L;
 }
