@@ -67,6 +67,14 @@
 */
 
 /*
+** C语言的setjmp和longjmp的实现机制
+** setjmp和longjmp分别承担非局部标号和goto作用,整体逻辑如下
+** 使用setjump,保存一下当前环境到jmp_buf跳转点,默认返回的值为0
+** 程序继续执行,到某个地方调用longjump,传入上面保存的jmp_buf,设置另外一个值,例如1
+** 执行到longjump函数的时候,会跳转到setjump,并获取longjump设置的新值
+*/
+
+/*
 ** LUAI_THROW/LUAI_TRY define how Lua does exception handling. By
 ** default, Lua handles errors with exceptions when compiling as
 ** C++ code, with _longjmp/_setjmp when asked to use them, and with
@@ -92,6 +100,10 @@
 #else							/* }{ */
 
 /* ISO C handling with long jumps */
+/*
+** 异常保护方法
+** 通过回调Pfunc f,并且setjump和longjump方式,实现代码的中断并回到setjump处
+*/
 #define LUAI_THROW(L,c)		longjmp((c)->b, 1)
 #define LUAI_TRY(L,c,a)		if (setjmp((c)->b) == 0) { a }
 #define luai_jmpbuf		jmp_buf
@@ -129,10 +141,14 @@ static void seterrorobj (lua_State *L, int errcode, StkId oldtop) {
 }
 
 
+/*
+** 抛出异常
+** 其中L->errorJmp->status状态值会设置为异常状态值
+*/
 l_noret luaD_throw (lua_State *L, int errcode) {
   if (L->errorJmp) {  /* thread has an error handler? */
     L->errorJmp->status = errcode;  /* set status */
-    LUAI_THROW(L, L->errorJmp);  /* jump to it */
+    LUAI_THROW(L, L->errorJmp);  /* jump to it - 通过longjump跳转到setjump点 */
   }
   else {  /* thread has no error handler */
     global_State *g = G(L);
@@ -141,7 +157,7 @@ l_noret luaD_throw (lua_State *L, int errcode) {
       setobjs2s(L, g->mainthread->top++, L->top - 1);  /* copy error obj. */
       luaD_throw(g->mainthread, errcode);  /* re-throw in main thread */
     }
-    else {  /* no handler at all; abort */
+    else {  /* no handler at all; abort - 没有error句柄,则直接中断处理 */
       if (g->panic) {  /* panic function? */
         seterrorobj(L, errcode, L->top);  /* assume EXTRA_STACK */
         if (L->ci->top < L->top)
@@ -154,6 +170,15 @@ l_noret luaD_throw (lua_State *L, int errcode) {
   }
 }
 
+/*
+** Lua的异常保护是通过luaD_rawrunprotect方法实现的
+** 函数最开始定义一个lua_longjump结构体,用于保护当前执行环境,状态值设置为LUA_OK
+** 然后调用LUAI_TRY函数,该函数实际上一个宏定义,将当前执行环境setjump,并执行回调函数
+** 如果回调函数执行内部,发生异常情况,则通过luaD_throw将异常抛出
+** 异常抛出函数,会执行LUAI_THROW函数,该函数是longjump的宏定义,并且将返回值设置为1
+** 由于执行了longjump,则C语言内部方法会回到跳转点setjump
+** LUAI_TRY函数判断setjump的返回值,之前是0,现在由于longjump设置值为1,所以不会继续执行回调函数,回调函数被中断
+*/
 
 /*
 ** 保护性调用(最终回调luaD_callnoyield方法)
@@ -166,7 +191,7 @@ int luaD_rawrunprotected (lua_State *L, Pfunc f, void *ud) {
   lj.status = LUA_OK;
   lj.previous = L->errorJmp;  /* chain new error handler */
   L->errorJmp = &lj;
-  LUAI_TRY(L, &lj,
+  LUAI_TRY(L, &lj,  /* 当函数内部调用处理,遇到异常情况下 */
     (*f)(L, ud);
   );
   L->errorJmp = lj.previous;  /* restore old error handler */
@@ -774,6 +799,9 @@ LUA_API int lua_yieldk (lua_State *L, int nresults, lua_KContext ctx,
 ** luaD_pcall最终调用luaD_rawrunprotected,luaD_rawrunprotected实际最终调用f_call函数
 ** 保护性调用的情况下Lua虚拟机使用lua_longjump为函数实现堆栈续传功能,也就是当错误发生的时候,在Lua内部能够最终跳转到调用点继续向下执行
 ** 函数调用主方法(异常保护方式)
+** 异常保护方法luaD_rawrunprotected主要在luaD_pcall中被调用(协程的yield也是通过该原理实现)
+** 该方法会返回执行的状态码,如果状态码非LUA_OK,则当前函数处理失败,CallInfo需要回滚到上一个ci
+** L->erorJmp是一个链式结构,通过L->errorJmp->errorJmp串联整个异常处理栈信息
 ** func - f_call方法
 ** u - Calls调用的方法等信息
 ** old_top - 函数调用前的栈顶
