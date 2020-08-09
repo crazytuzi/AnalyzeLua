@@ -36,6 +36,27 @@
 
 
 
+/*
+** 具体的整个函数调用栈操作流程如下
+** 首先Lua main函数中,通过lua_push*系列函数将调用的函数以及参数数据进行入栈操作
+** Lua会调用lua_pcall执行Lua函数的真正调用,lua_pcall函数通过参数个数和结果个数进行数据校验,以及拿到函数栈的StkId地址
+** lua_pcallk和lua_callk函数都在lapi.c文件中,两个函数的区别是一个有异常保护,一个没有异常保护
+**    无论是保护状态下,还是非保护状态下,最终都是调用luaD_call函数
+** luaD_call函数中,首先会调用luaD_precall预处理函数,luaD_precall预处理函数主要会创建一个调用栈CallInfo,管理函数调用时的信息
+**    CallInfo是一个双向链表形式管理,每次有新的函数调用,都会用新的CallInfo进行函数调用信息管理
+** Lua的函数调用一个分三种:C语言闭包函数(例如pmain),Lua的API函数库(例如字符串strlen函数),Lua语言解析
+** 如果是C语言闭包函数和Lua的API函数,会直接调用C方法(方法入参都为L),并调用luaD_poscall,调整堆栈,返回上一个调用栈
+**    调用肯定是一个函数内会嵌套N个函数,每次执行完一个函数后,都会返回到上一层CallInfo(L->ci会变更为上一层CallInfo),然后继续执行该函数的其他事务
+** 如果是Lua语言,则会调用luaV_execute执行语言字节码调用,在luaV_execute函数中,
+**    当遇到函数调用尾部OP_TAILCALL的时候,则会调整CallInfo堆栈,返回上一个调用栈
+** 如果有返回值,在被执行的函数中通过lua_push*系列函数,将函数结果返回到栈顶即可,外部可以通过lua_to*系列函数,获取当前调用栈的栈顶数据信息
+** 最后,在luaD_poscall函数中,会调用moveresults方法,该方法主要用于调整返回结果,将结果集调整到CallInfo函数的起始位置ci->func,并调整L->top
+**    一个CallInfo调整完毕后,只需要将得到的结果集返回到堆栈上,并调整堆栈,保证整体的堆栈回调大小控制在一定范围内
+*/
+
+
+
+
 #define errorstatus(s)	((s) > LUA_YIELD)
 
 
@@ -134,6 +155,11 @@ l_noret luaD_throw (lua_State *L, int errcode) {
 }
 
 
+/*
+** 保护性调用(最终回调luaD_callnoyield方法)
+** f - luaD_callnoyield方法
+** ud - CallS *c (c->func,c->nresults)
+*/
 int luaD_rawrunprotected (lua_State *L, Pfunc f, void *ud) {
   unsigned short oldnCcalls = L->nCcalls;
   struct lua_longjmp lj;
@@ -337,6 +363,10 @@ static void tryfuncTM (lua_State *L, StkId func) {
 ** Handle most typical cases (zero results for commands, one result for
 ** expressions, multiple results for tail calls/single parameters)
 ** separated.
+** 函数调用结束后,首先CI会回滚到上一层的调用,并调用moveresults函数,调整结果集数据
+** moveresults会将结果集(0个/1个/多个),逐个根据顺序拷贝到ci->func位置,并调整L->top的指针位置
+** 一个函数调用完毕之后,只需要将得到的结果集返回给上一层,并调整堆栈top指针,保证整体的堆栈回调大小控制在一定范围内
+** 返回值是我们回调函数里面,通过lua_push*方法向栈顶设置返回值,如果回调函数中没有设置返回值,则首个返回的结果为最后一个参数
 */
 static int moveresults (lua_State *L, const TValue *firstResult, StkId res,
                                       int nres, int wanted) {
@@ -416,35 +446,43 @@ int luaD_poscall (lua_State *L, CallInfo *ci, StkId firstResult, int nres) {
 ** If function is a C function, does the call, too. (Otherwise, leave
 ** the execution ('luaV_execute') to the caller, to allow stackless
 ** calls.) Returns true iff function has been executed (C function).
+** 预处理函数主要逻辑:
+** 检查栈信息,创建一个新的CallInfo容器,填充相关的信息
+** 如果是C语言闭包函数或者Lua的C语言API函数库,则直接执行函数(这些函数入参都统一为L)
+** 如果是Lua语言,则进行CallInfo预处理之后,直接调用luaV_execute函数,执行虚拟机的指令集
+** 不论是C语言函数还是Lua语言函数,函数执行完毕后都会进行堆栈调整,将正在执行的操作栈CallInfo指针会往上一层调用栈吊针
+**    C语言函数会调用luaD_poscall调用堆栈,
+**    Lua语言着在虚拟机指令集运行中,找到函数调用尾部OP_TAILCALL的时候,会调整整体堆栈
+** 如果需要,回调钩子函数
 */
 int luaD_precall (lua_State *L, StkId func, int nresults) {
   lua_CFunction f;
   CallInfo *ci;
   switch (ttype(func)) {
-    case LUA_TCCL:  /* C closure */
+    case LUA_TCCL:  /* C closure - C语言闭包 */
       f = clCvalue(func)->f;
       goto Cfunc;
-    case LUA_TLCF:  /* light C function */
+    case LUA_TLCF:  /* light C function - C语言函数 */
       f = fvalue(func);
      Cfunc: {
       int n;  /* number of returns */
       checkstackp(L, LUA_MINSTACK, func);  /* ensure minimum stack size */
-      ci = next_ci(L);  /* now 'enter' new function */
-      ci->nresults = nresults;
-      ci->func = func;
-      ci->top = L->top + LUA_MINSTACK;
+      ci = next_ci(L);  /* now 'enter' new function - 创建一个新的CallInfo栈对象 */
+      ci->nresults = nresults;  /* 返回的结果个数 */
+      ci->func = func;  /* 指向需要调用的函数栈 */
+      ci->top = L->top + LUA_MINSTACK;  /* C语言方法最小的调用栈允许LUA_MINSTACK=20 */
       lua_assert(ci->top <= L->stack_last);
       ci->callstatus = 0;
       if (L->hookmask & LUA_MASKCALL)
         luaD_hook(L, LUA_HOOKCALL, -1);
       lua_unlock(L);
-      n = (*f)(L);  /* do the actual call */
+      n = (*f)(L);  /* do the actual call - 直接调用C语言闭包函数 */
       lua_lock(L);
       api_checknelems(L, n);
-      luaD_poscall(L, ci, L->top - n, n);
-      return 1;
+      luaD_poscall(L, ci, L->top - n, n);  /* 调整堆栈 */
+      return 1;  /* 返回1 C语言本身函数 */
     }
-    case LUA_TLCL: {  /* Lua function: prepare its call */
+    case LUA_TLCL: {  /* Lua function: prepare its call - Lua方法 */
       StkId base;
       Proto *p = clLvalue(func)->p;
       int n = cast_int(L->top - func) - 1;  /* number of real arguments */
@@ -467,7 +505,7 @@ int luaD_precall (lua_State *L, StkId func, int nresults) {
       ci->callstatus = CIST_LUA;
       if (L->hookmask & LUA_MASKCALL)
         callhook(L, ci);
-      return 0;
+      return 0;  /* 返回0 Lua函数 */
     }
     default: {  /* not a function */
       checkstackp(L, 1, func);  /* ensure space for metamethod */
@@ -498,18 +536,22 @@ static void stackerror (lua_State *L) {
 ** The arguments are on the stack, right after the function.
 ** When returns, all the results are on the stack, starting at the original
 ** function position.
+** 无论是保护模式还是非保护模式下,最终会调用luaD_call方法
+** 该方法会先调用luaD_precall函数,对Lua函数执行做预处理,预处理主要作用是调整栈CallInfo的堆栈
+** 真正执行一个C语言方法或者一个Lua方法
 */
 void luaD_call (lua_State *L, StkId func, int nResults) {
   if (++L->nCcalls >= LUAI_MAXCCALLS)
     stackerror(L);
   if (!luaD_precall(L, func, nResults))  /* is a Lua function? */
-    luaV_execute(L);  /* call it */
+    luaV_execute(L);  /* call it - Lua方法,则执行字节码方法 */
   L->nCcalls--;
 }
 
 
 /*
 ** Similar to 'luaD_call', but does not allow yields during the call
+** 不允许挂起
 */
 void luaD_callnoyield (lua_State *L, StkId func, int nResults) {
   L->nny++;
@@ -725,17 +767,29 @@ LUA_API int lua_yieldk (lua_State *L, int nresults, lua_KContext ctx,
 }
 
 
+
+/*
+** 在lapi.c中,lua_pcallk方法是受保护的调用方式,lua_callk为非受保护的调用方法,受保护方法的唯一区别:
+** 函数的调用都不会因为错误直接导致程序直接退出,而是退回到调用点,然后将状态返回到外层的逻辑处理
+** luaD_pcall最终调用luaD_rawrunprotected,luaD_rawrunprotected实际最终调用f_call函数
+** 保护性调用的情况下Lua虚拟机使用lua_longjump为函数实现堆栈续传功能,也就是当错误发生的时候,在Lua内部能够最终跳转到调用点继续向下执行
+** 函数调用主方法(异常保护方式)
+** func - f_call方法
+** u - Calls调用的方法等信息
+** old_top - 函数调用前的栈顶
+** ef - 错误状态
+*/
 int luaD_pcall (lua_State *L, Pfunc func, void *u,
                 ptrdiff_t old_top, ptrdiff_t ef) {
   int status;
-  CallInfo *old_ci = L->ci;
-  lu_byte old_allowhooks = L->allowhook;
+  CallInfo *old_ci = L->ci;  /* 上一个函数回调CallInfo */
+  lu_byte old_allowhooks = L->allowhook;  /* 是否允许钩子 */
   unsigned short old_nny = L->nny;
   ptrdiff_t old_errfunc = L->errfunc;
   L->errfunc = ef;
-  status = luaD_rawrunprotected(L, func, u);
-  if (status != LUA_OK) {  /* an error occurred? */
-    StkId oldtop = restorestack(L, old_top);
+  status = luaD_rawrunprotected(L, func, u);  /* 异常保护调用主函数 */
+  if (status != LUA_OK) {  /* an error occurred? - 处理失败 */
+    StkId oldtop = restorestack(L, old_top);  /* 栈状态回滚 */
     luaF_close(L, oldtop);  /* close possible pending closures */
     seterrorobj(L, status, oldtop);
     L->ci = old_ci;

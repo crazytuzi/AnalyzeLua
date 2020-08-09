@@ -569,7 +569,7 @@ static int pmain (lua_State *L) {
     lua_pushboolean(L, 1);  /* signal for libraries to ignore env. vars. */
     lua_setfield(L, LUA_REGISTRYINDEX, "LUA_NOENV");
   }
-  luaL_openlibs(L);  /* open standard libraries */
+  luaL_openlibs(L);  /* open standard libraries - 打开Lua标准库 */
   createargtable(L, argv, argc, script);  /* create table 'arg' */
   if (!(args & has_E)) {  /* no option '-E'? */
     if (handle_luainit(L) != LUA_OK)  /* run LUA_INIT */
@@ -589,11 +589,23 @@ static int pmain (lua_State *L) {
     }
     else dofile(L, NULL);  /* executes stdin as a file */
   }
-  lua_pushboolean(L, 1);  /* signal no errors */
+  lua_pushboolean(L, 1);  /* signal no errors - 向栈顶push返回值 */
   return 1;
 }
 
 
+/*
+** 创建完基础的lua_State*结构后,向数据栈上push了一个C语言的闭包方法 - pmain
+** pmain是整个Lua执行流最核心的方法,主要负责:命令行参数的解析、Lua语言默认库的加载、Lua脚本语言的解析和调用等
+** Lua的栈操作主要靠lua_push*系列函数,往栈上压入不同的数据
+** main函数中首先压入pmain方法,然后把命令行参数个数和命令行参数数据也压入到Lua的栈上
+**    然后通过lua_pcall方法,开始执行pmain函数
+** 当调用pmain函数的时候,pmain首先会去解析命令行参数,然后加载默认的Lua语言的API函数库,再然后加载Lua脚本文件以及
+      解析Lua语言,最后如果pamin方法执行成功,需要将status状态push放入栈顶(lua_pushboolean)
+** main方法中,通过lua_toboolean从当前调用栈CallInfo上获取结果值
+** argc - 命令行参数的个数
+** argv - 命令行参数的值,指针结构
+*/
 int main (int argc, char **argv) {
   int status, result;
   /* 创建一个主线程数据结构 */
@@ -602,11 +614,11 @@ int main (int argc, char **argv) {
     l_message(argv[0], "cannot create state: not enough memory");
     return EXIT_FAILURE;
   }
-  lua_pushcfunction(L, &pmain);  /* to call 'pmain' in protected mode */
-  lua_pushinteger(L, argc);  /* 1st argument */
-  lua_pushlightuserdata(L, argv); /* 2nd argument */
-  status = lua_pcall(L, 2, 1, 0);  /* do the call */
-  result = lua_toboolean(L, -1);  /* get result */
+  lua_pushcfunction(L, &pmain);  /* to call 'pmain' in protected mode - 将pmain放入L上,L->top值为&pmain */
+  lua_pushinteger(L, argc);  /* 1st argument - 将argc放入L上,L->top值为argc */
+  lua_pushlightuserdata(L, argv); /* 2nd argument - 将argv放入L上,L->top值为argv */
+  status = lua_pcall(L, 2, 1, 0);  /* do the call - 执行pmain函数 */
+  result = lua_toboolean(L, -1);  /* get result - 获取pmain函数lua_pushboolean(L,1)的信号值 */
   report(L, status);
   lua_close(L);
   return (result && status == LUA_OK) ? EXIT_SUCCESS : EXIT_FAILURE;

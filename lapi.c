@@ -1068,6 +1068,9 @@ struct CallS {  /* data to 'f_call' */
 };
 
 
+/*
+** 该方法包了很多层,最终调用luaD_call方法
+*/
 static void f_call (lua_State *L, void *ud) {
   struct CallS *c = cast(struct CallS *, ud);
   luaD_callnoyield(L, c->func, c->nresults);
