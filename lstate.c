@@ -266,6 +266,11 @@ static void close_state (lua_State *L) {
 }
 
 
+/*
+** 创建一个新的线程栈
+** Lua在main函数中,调用luaL_newstate方法,创建了主线程(即lua_State* L)
+** 主要用于实现Lua的协程实现(Lua没有多线程实现)
+*/
 LUA_API lua_State *lua_newthread (lua_State *L) {
   global_State *g = G(L);
   lua_State *L1;
@@ -279,7 +284,7 @@ LUA_API lua_State *lua_newthread (lua_State *L) {
   L1->next = g->allgc;
   g->allgc = obj2gco(L1);
   /* anchor it on L stack */
-  setthvalue(L, L->top, L1);
+  setthvalue(L, L->top, L1);  /* 在栈顶上设置一个新的L1对象 */
   api_incr_top(L);
   preinit_thread(L1, g);
   L1->hookmask = L->hookmask;
