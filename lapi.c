@@ -727,6 +727,9 @@ static int auxgetstr (lua_State *L, const TValue *t, const char *k) {
 }
 
 
+/*
+** 从全局注册表中,获取一个T[name]的值,放入L->top
+*/
 LUA_API int lua_getglobal (lua_State *L, const char *name) {
   Table *reg = hvalue(&G(L)->l_registry);
   lua_lock(L);
@@ -734,6 +737,9 @@ LUA_API int lua_getglobal (lua_State *L, const char *name) {
 }
 
 
+/*
+** 从Table表中,获取一个T[name]的值,放入L->top
+*/
 LUA_API int lua_gettable (lua_State *L, int idx) {
   StkId t;
   lua_lock(L);
@@ -744,22 +750,35 @@ LUA_API int lua_gettable (lua_State *L, int idx) {
 }
 
 
+/*
+** lua_getfield函数主要用于向Table获取值
+** L - 当前执行环境栈
+** idx - Table的索引值,如果是全局注册表,则idx = LUA_REGISTRYINDEX,
+**                    如果是栈上的一个Table表,则数字索引,
+**                    通过index2addr方法寻找栈对象
+** k - Table的索引键
+** 从T[k]上取到一个值,并将值放置到L->top栈顶上,并调整栈顶(L->top++)
+** 操作注册表,实践上就是操作一个特殊的Table结构
+*/
 LUA_API int lua_getfield (lua_State *L, int idx, const char *k) {
   lua_lock(L);
   return auxgetstr(L, index2addr(L, idx), k);
 }
 
 
+/*
+** 通过数组下标获取T[i]的值,并将值放入栈顶L->top
+*/
 LUA_API int lua_geti (lua_State *L, int idx, lua_Integer n) {
   StkId t;
   const TValue *slot;
   lua_lock(L);
   t = index2addr(L, idx);
-  if (luaV_fastget(L, t, n, slot, luaH_getint)) {
+  if (luaV_fastget(L, t, n, slot, luaH_getint)) {  /* 如果找到值,则压入栈顶 */
     setobj2s(L, L->top, slot);
     api_incr_top(L);
   }
-  else {
+  else {  /* 找不到的情况下 */
     setivalue(L->top, n);
     api_incr_top(L);
     luaV_finishget(L, t, L->top - 1, L->top - 1, slot);
@@ -886,6 +905,10 @@ static void auxsetstr (lua_State *L, const TValue *t, const char *k) {
 }
 
 
+/*
+** 将栈顶的值,设置到全局变量中去,以LUA_RIDX_GLOBALS[name] = L->top,
+** 并调整栈顶L->top(L->top--),pop弹出栈顶值
+*/
 LUA_API void lua_setglobal (lua_State *L, const char *name) {
   Table *reg = hvalue(&G(L)->l_registry);
   lua_lock(L);  /* unlock done in 'auxsetstr' */
@@ -893,6 +916,9 @@ LUA_API void lua_setglobal (lua_State *L, const char *name) {
 }
 
 
+/*
+** 将栈顶的值,设置到Table中去,并调整栈顶L->top(L->top-2),pop弹出栈顶值
+*/
 LUA_API void lua_settable (lua_State *L, int idx) {
   StkId t;
   lua_lock(L);
@@ -904,6 +930,16 @@ LUA_API void lua_settable (lua_State *L, int idx) {
 }
 
 
+/*
+** lua_setfield函数主要用于向Table设置值
+** L - 当前执行环境栈
+** idx - Talbe的索引值,如果是全局注册表,则idx = LUA_REGISTRYINDEX,
+**                    如果是在栈上的一个Table表,则数字索引,
+**                    通过index2addr方法寻找栈对象
+** k - Table的索引键
+** 将栈顶L->top的值,赋值到T[k],并弹出栈顶值(L->top)
+** 操作注册表,实际上就是操作一个特殊的Table结构
+*/
 LUA_API void lua_setfield (lua_State *L, int idx, const char *k) {
   lua_lock(L);  /* unlock done in 'auxsetstr' */
   auxsetstr(L, index2addr(L, idx), k);

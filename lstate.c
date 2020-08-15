@@ -188,12 +188,20 @@ static void freestack (lua_State *L) {
 
 
 /*
+** 注册表G->l_registry,是在主线程栈创建的时候进行初始化的
+** 初始化第一步,创建一个Table类型的表,并将表赋值到G->l_registry
+** 然后默认初始化LUA_RIDX_MAINTHREAD(主线程索引)和LUA_RIDX_GLOBALS(全局环境变量)
+*/
+
+
+/*
 ** Create registry table and its predefined values
+** 创建一个注册表,并且定义默认值
 */
 static void init_registry (lua_State *L, global_State *g) {
   TValue temp;
   /* create registry */
-  Table *registry = luaH_new(L);
+  Table *registry = luaH_new(L);  /* 创建一个Table */
   sethvalue(L, &g->l_registry, registry);
   luaH_resize(L, registry, LUA_RIDX_LAST, 0);
   /* registry[LUA_RIDX_MAINTHREAD] = L */

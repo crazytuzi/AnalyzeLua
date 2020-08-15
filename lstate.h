@@ -138,6 +138,17 @@ typedef struct CallInfo {
 
 
 /*
+** Lua通过实现全局的注册表,来管理全局变量、CAPI扩展库的加载等信息
+** 注册表主要通过Table的数据结构进行管理,所以注册表是一个多维数组的结构
+** 一般情况下,全局注册表通过lua_setfield和lua_getfield两个函数跟Lua的主线程栈进行通信
+** lua_setfield:将栈顶L->top的值,赋值到T[k]上,并将栈顶数据pop弹出(L->top--),
+**    当我们向一个Table结构进行设置值的时候,将栈顶L->top-1的值,设置到指定Table的指定索引上,并将栈顶值弹出
+** lua_getfield:从T[k]上取到一个值,并将值放置到L->top栈顶上,并调整栈顶(L->top++),
+**    要从全局注册表中获取一个数据值的时候,需要将注册表上的值压入栈顶,该值才能被后续的Lua程序调用
+*/
+
+
+/*
 ** 'global state', shared by all threads of this state
 ** Lua 全局状态机
 ** 管理全局数据,全局字符串表,内存管理函数,GC把所有对象串联起来的信息,内存等
