@@ -968,21 +968,35 @@ LUALIB_API int luaL_getsubtable (lua_State *L, int idx, const char *fname) {
 ** to open a module, registers the result in 'package.loaded' table and,
 ** if 'glb' is true, also registers the result in the global table.
 ** Leaves resulting module on the top.
+** 首先会在全局注册表G(L)->l_registry上创建一个LUA_LOADED_TABLE的表,
+**    如果该表已经创建,则不重复创建,并将该表放入L->top栈顶
+** 然后通过lua_getfield方法,通过modname模块名称去取,是否存在该key值
+**    如果不存在,则返回nil,压入L->top栈顶
+** 通过lua_toboolean方法,检查模块是否已经重新加载过,如果没有加载过(nil值返回false),则重新加载模块
+** 清空栈顶L->top = nil值,并入栈openf和modname,并调用lua_call函数,执行各个模块定义的openf的函数调用
+** 调用lua_call函数的时候,入参个数为1,出参个数为1,
+** openf函数,主要调用luaL_newlib函数,去创建一个module数组作为返回值,压入栈顶
+** 然后调用lua_pushvalue拷贝一个module的值,
+** 然后调用lua_setfield将LOADED[modname]值设置为module,并调整堆栈,将栈顶拷贝的module值pop弹出(L->top--)
+** 然后通过lua_remove(L,-2)方法将LOADED表清除
+** 最后,将该模块module设置到全局环境变量上去
+** modname - 模块名称
+** openf - 回调函数
 */
 LUALIB_API void luaL_requiref (lua_State *L, const char *modname,
                                lua_CFunction openf, int glb) {
-  luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_LOADED_TABLE);
+  luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_LOADED_TABLE);  /* 获取注册表&G(L)->l_registry,如果不存在则创建注册表 */
   lua_getfield(L, -1, modname);  /* LOADED[modname] */
-  if (!lua_toboolean(L, -1)) {  /* package not already loaded? */
-    lua_pop(L, 1);  /* remove field */
-    lua_pushcfunction(L, openf);
-    lua_pushstring(L, modname);  /* argument to open function */
+  if (!lua_toboolean(L, -1)) {  /* package not already loaded? - 如果包没有加载,则重新加载 */
+    lua_pop(L, 1);  /* remove field - 栈顶设置为nil */
+    lua_pushcfunction(L, openf);  /* 将openf设置到栈顶L->top上 */
+    lua_pushstring(L, modname);  /* argument to open function - 将modname设置到栈顶L->top上 */
     lua_call(L, 1, 1);  /* call 'openf' to open module */
     lua_pushvalue(L, -1);  /* make copy of module (call result) */
     lua_setfield(L, -3, modname);  /* LOADED[modname] = module */
   }
   lua_remove(L, -2);  /* remove LOADED table */
-  if (glb) {
+  if (glb) {  /* glb = true则注册到全局表 */
     lua_pushvalue(L, -1);  /* copy of module */
     lua_setglobal(L, modname);  /* _G[modname] = module */
   }

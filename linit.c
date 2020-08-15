@@ -39,6 +39,8 @@
 /*
 ** these libs are loaded by lua.c and are readily available to any Lua
 ** program
+** Lua标准库常量
+** 定义标准库名称和启动方法
 */
 static const luaL_Reg loadedlibs[] = {
   {"_G", luaopen_base},
@@ -58,6 +60,10 @@ static const luaL_Reg loadedlibs[] = {
 };
 
 
+/*
+** 主要遍历一个loadedlibs数组,然后循环调用luaL_requiref方法,进行扩展库的逐个加载
+** loadedlibs数组包含两个元素:扩展库名称和启动方法
+*/
 LUALIB_API void luaL_openlibs (lua_State *L) {
   const luaL_Reg *lib;
   /* "require" functions from 'loadedlibs' and set results to global table */
