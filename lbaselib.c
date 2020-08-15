@@ -451,6 +451,9 @@ static int luaB_tostring (lua_State *L) {
 }
 
 
+/*
+** 基础库的数组配置,主要定义函数名称和对应方法
+*/
 static const luaL_Reg base_funcs[] = {
   {"assert", luaB_assert},
   {"collectgarbage", luaB_collectgarbage},
@@ -484,16 +487,24 @@ static const luaL_Reg base_funcs[] = {
 };
 
 
+/*
+** 基础库的的启动函数,主要有三步:
+** 从全局注册表中获取全局环境变量数组LUA_RIDX_GLOBALS,
+**    并通过luaL_setfuncs方法将基础库的函数逐个塞进全局环境变量LUA_RIDX_GLOBALS[name] = func
+** lua_pushvalue拷贝全局环境变量数组LUA_RIDX_GLOBALS,然后LUA_RIDX_GLOBALS["_G"] = LUA_RIDX_GLOBALS,并将拷贝的数组pop弹出栈顶
+** lua_pushliteral在栈顶设置一个字符串常量,用于存放版本信息,
+**    并设置LUA_RIDX_GLOBALS["_VERSION"] = LUA_VERSION,然后将栈顶的版本信息pop弹出栈顶
+*/
 LUAMOD_API int luaopen_base (lua_State *L) {
   /* open lib into global table */
-  lua_pushglobaltable(L);
-  luaL_setfuncs(L, base_funcs, 0);
+  lua_pushglobaltable(L);  /* 打开全局环境变量数组LUA_RIDX_GLOBALS,放置到栈顶 */
+  luaL_setfuncs(L, base_funcs, 0);  /* 将base_funcs中的函数,逐个设置到LUA_RIDX_GLOBALS数组上 */
   /* set global _G */
   lua_pushvalue(L, -1);
-  lua_setfield(L, -2, "_G");
+  lua_setfield(L, -2, "_G");  /* LUA_RIDX_GLOBALS["_G"] = LUA_RIDX_GLOBALS */
   /* set global _VERSION */
   lua_pushliteral(L, LUA_VERSION);
-  lua_setfield(L, -2, "_VERSION");
+  lua_setfield(L, -2, "_VERSION");  /* LUA_RIDX_GLOBALS["_VERSION"] = LUA_VERSION */
   return 1;
 }
 

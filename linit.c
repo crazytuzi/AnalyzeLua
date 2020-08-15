@@ -35,6 +35,20 @@
 #include "lualib.h"
 #include "lauxlib.h"
 
+/*
+** 扩展库实现重点需要分三个部分:
+** 函数配置数组:主要定义了函数名称和对应的C语言函数,
+**    数组最后一个对象为{NULL,NULL},因为数组遍历的时候会根据NULL做判断进行跳出
+** 扩展库加载方法:入参为L,对当前的线程栈,方法内容必须实现luaL_newlib,
+**    该函数主要将配置数组中的方法,遍历注册到一个module[funcname] = func 数组上,
+**    该mudule数组,作为加载方法openf的结果放入栈上
+** 函数实现:每个函数的入参都为lua_State* L,为当前线程栈  
+**
+** 为啥每个函数入参都为L,那么在Lua中调用的时候如何进行多个参数入参?
+** 实际上,Lua语言还会解析语法本身,对于多个参数入参,也都会通过lua_push*方法,放入栈上,
+** 所以当调用函数的时候,往栈上取参即可
+*/
+
 
 /*
 ** these libs are loaded by lua.c and are readily available to any Lua
@@ -43,7 +57,7 @@
 ** 定义标准库名称和启动方法
 */
 static const luaL_Reg loadedlibs[] = {
-  {"_G", luaopen_base},
+  {"_G", luaopen_base},  /* 全局基础方法聚合,常见的loadfile等函数都在这上面配置,在lua语言中,直接使用函数即可,无需使用库名字.方法名称方式 */
   {LUA_LOADLIBNAME, luaopen_package},
   {LUA_COLIBNAME, luaopen_coroutine},
   {LUA_TABLIBNAME, luaopen_table},
@@ -56,7 +70,7 @@ static const luaL_Reg loadedlibs[] = {
 #if defined(LUA_COMPAT_BITLIB)
   {LUA_BITLIBNAME, luaopen_bit32},
 #endif
-  {NULL, NULL}
+  {NULL, NULL}  /* 主要用于在循环的时候遍历退出 */
 };
 
 
