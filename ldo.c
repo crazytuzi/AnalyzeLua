@@ -878,7 +878,7 @@ static void f_parser (lua_State *L, void *ud) {
     cl = luaU_undump(L, p->z, p->name);
   }
   else {
-    checkmode(L, p->mode, "text");
+    checkmode(L, p->mode, "text");  /* 文本类型,调用luaY_parser */
     cl = luaY_parser(L, p->z, &p->buff, &p->dyd, p->name, c);
   }
   lua_assert(cl->nupvalues == cl->p->sizeupvalues);
@@ -886,6 +886,9 @@ static void f_parser (lua_State *L, void *ud) {
 }
 
 
+/*
+** 文件解析函数(保护方式调用)
+*/
 int luaD_protectedparser (lua_State *L, ZIO *z, const char *name,
                                         const char *mode) {
   struct SParser p;

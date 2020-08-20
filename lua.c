@@ -238,11 +238,14 @@ static void createargtable (lua_State *L, char **argv, int argc, int script) {
 
 
 static int dochunk (lua_State *L, int status) {
-  if (status == LUA_OK) status = docall(L, 0, 0);
+  if (status == LUA_OK) status = docall(L, 0, 0);  /* 执行文件Lua源码 */
   return report(L, status);
 }
 
 
+/*
+** 针对文件进行加载、解析和执行操作
+*/
 static int dofile (lua_State *L, const char *name) {
   return dochunk(L, luaL_loadfile(L, name));
 }
@@ -587,7 +590,7 @@ static int pmain (lua_State *L) {
       print_version();
       doREPL(L);  /* do read-eval-print loop */
     }
-    else dofile(L, NULL);  /* executes stdin as a file */
+    else dofile(L, NULL);  /* executes stdin as a file - 加载文件 */
   }
   lua_pushboolean(L, 1);  /* signal no errors - 向栈顶push返回值 */
   return 1;

@@ -17,6 +17,10 @@
 
 typedef struct Zio ZIO;
 
+/*
+** 逐个读取字符
+** 语法解析原理:通过逐个读取文件流数据,通过关键字Token,然后分割不同的代码语句statement
+*/
 #define zgetc(z)  (((z)->n--)>0 ?  cast_uchar(*(z)->p++) : luaZ_fill(z))
 
 
@@ -52,12 +56,15 @@ LUAI_FUNC size_t luaZ_read (ZIO* z, void *b, size_t n);	/* read next n bytes */
 
 /* --------- Private Part ------------------ */
 
+/*
+** 存储文件流读取的状态信息
+*/
 struct Zio {
-  size_t n;			/* bytes still unread */
-  const char *p;		/* current position in buffer */
-  lua_Reader reader;		/* reader function */
-  void *data;			/* additional data */
-  lua_State *L;			/* Lua state (for reader) */
+  size_t n;			/* bytes still unread - 未读取数量 */
+  const char *p;		/* current position in buffer - 读取buf指针地址 */
+  lua_Reader reader;		/* reader function - 文件读取方法 */
+  void *data;			/* additional data - buf指针地址 */
+  lua_State *L;			/* Lua state (for reader) - 当前线程栈地址 */
 };
 
 

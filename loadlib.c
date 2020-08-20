@@ -595,6 +595,9 @@ static void findloader (lua_State *L, const char *name) {
 }
 
 
+/*
+** 加载文件,如果已经加载过了,则不加载
+*/
 static int ll_require (lua_State *L) {
   const char *name = luaL_checkstring(L, 1);
   lua_settop(L, 1);  /* LOADED table will be at index 2 */

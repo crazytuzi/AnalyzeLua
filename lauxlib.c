@@ -640,6 +640,10 @@ typedef struct LoadF {
 } LoadF;
 
 
+/*
+** 文件读取方法
+** 主要通过fread函数直接读取Lua文件数据到buf区域
+*/
 static const char *getF (lua_State *L, void *ud, size_t *size) {
   LoadF *lf = (LoadF *)ud;
   (void)L;  /* not used */
@@ -701,6 +705,9 @@ static int skipcomment (LoadF *lf, int *cp) {
 }
 
 
+/*
+** 加载Lua文件
+*/
 LUALIB_API int luaL_loadfilex (lua_State *L, const char *filename,
                                              const char *mode) {
   LoadF lf;
@@ -725,7 +732,7 @@ LUALIB_API int luaL_loadfilex (lua_State *L, const char *filename,
   }
   if (c != EOF)
     lf.buff[lf.n++] = c;  /* 'c' is the first character of the stream */
-  status = lua_load(L, getF, &lf, lua_tostring(L, -1), mode);
+  status = lua_load(L, getF, &lf, lua_tostring(L, -1), mode);  /* 加载文件和解析文件,如果多个文件嵌套,则嵌套加载 */
   readstatus = ferror(lf.f);
   if (filename) fclose(lf.f);  /* close file (even in case of errors) */
   if (readstatus) {

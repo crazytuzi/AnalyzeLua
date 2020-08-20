@@ -427,6 +427,11 @@ static void read_string (LexState *ls, int del, SemInfo *seminfo) {
 }
 
 
+/*
+** 真正执行分割的函数
+** 该函数是一个for循环,循环从文件buf中去读取数据
+** for循环中,会调用next函数,会逐个读取字符
+*/
 static int llex (LexState *ls, SemInfo *seminfo) {
   luaZ_resetbuffer(ls->buff);
   for (;;) {
@@ -547,6 +552,9 @@ static int llex (LexState *ls, SemInfo *seminfo) {
 }
 
 
+/*
+** 用于语法Token的分割,是语法分割器
+*/
 void luaX_next (LexState *ls) {
   ls->lastline = ls->linenumber;
   if (ls->lookahead.token != TK_EOS) {  /* is there a look-ahead token? */

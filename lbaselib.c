@@ -285,11 +285,14 @@ static int load_aux (lua_State *L, int status, int envidx) {
 }
 
 
+/*
+** 只会加载文件,编译代码,不会运行文件里的代码
+*/
 static int luaB_loadfile (lua_State *L) {
   const char *fname = luaL_optstring(L, 1, NULL);
   const char *mode = luaL_optstring(L, 2, NULL);
   int env = (!lua_isnone(L, 3) ? 3 : 0);  /* 'env' index or 0 if no 'env' */
-  int status = luaL_loadfilex(L, fname, mode);
+  int status = luaL_loadfilex(L, fname, mode);  /* luaL_loadfilex函数底层调用lua_load函数 */
   return load_aux(L, status, env);
 }
 
@@ -332,6 +335,9 @@ static const char *generic_reader (lua_State *L, void *ud, size_t *size) {
 }
 
 
+/*
+** 从字符串中读取代码
+*/
 static int luaB_load (lua_State *L) {
   int status;
   size_t l;
@@ -360,12 +366,15 @@ static int dofilecont (lua_State *L, int d1, lua_KContext d2) {
 }
 
 
+/*
+** 会加载文件并执行文件,对于相同的文件每次都会执行
+*/
 static int luaB_dofile (lua_State *L) {
   const char *fname = luaL_optstring(L, 1, NULL);
   lua_settop(L, 1);
   if (luaL_loadfile(L, fname) != LUA_OK)
     return lua_error(L);
-  lua_callk(L, 0, LUA_MULTRET, 0, dofilecont);
+  lua_callk(L, 0, LUA_MULTRET, 0, dofilecont);  /* 通过lua_callk执行Lua文件源码 */
   return dofilecont(L, 0, 0);
 }
 

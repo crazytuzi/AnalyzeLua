@@ -596,6 +596,9 @@ static int block_follow (LexState *ls, int withuntil) {
 }
 
 
+/*
+** 根据luaX_next分割器分割出来的Token,组装成语法块语法statement,最后将语法逐个组装成语法树
+*/
 static void statlist (LexState *ls) {
   /* statlist -> { stat [';'] } */
   while (!block_follow(ls, 1)) {
@@ -1617,13 +1620,17 @@ static void mainfunc (LexState *ls, FuncState *fs) {
   fs->f->is_vararg = 1;  /* main function is always declared vararg */
   init_exp(&v, VLOCAL, 0);  /* create and... */
   newupvalue(fs, ls->envn, &v);  /* ...set environment upvalue */
-  luaX_next(ls);  /* read first token */
-  statlist(ls);  /* parse main body */
+  luaX_next(ls);  /* read first token - 读取第一个token */
+  statlist(ls);  /* parse main body - 语法树遍历解析 */
   check(ls, TK_EOS);
   close_func(ls);
 }
 
 
+/*
+** 真正执行语法树解析
+** 主要用于组装语法状态结构(LexState)和方法状态结构(FuncState)
+*/
 LClosure *luaY_parser (lua_State *L, ZIO *z, Mbuffer *buff,
                        Dyndata *dyd, const char *name, int firstchar) {
   LexState lexstate;
@@ -1641,7 +1648,7 @@ LClosure *luaY_parser (lua_State *L, ZIO *z, Mbuffer *buff,
   lexstate.dyd = dyd;
   dyd->actvar.n = dyd->gt.n = dyd->label.n = 0;
   luaX_setinput(L, &lexstate, z, funcstate.f->source, firstchar);
-  mainfunc(&lexstate, &funcstate);
+  mainfunc(&lexstate, &funcstate);  /* 用于执行语法树的解析工作 */
   lua_assert(!funcstate.prev && funcstate.nups == 1 && !lexstate.fs);
   /* all scopes should be correctly finished */
   lua_assert(dyd->actvar.n == 0 && dyd->gt.n == 0 && dyd->label.n == 0);

@@ -32,6 +32,12 @@
 #include "lvm.h"
 
 
+/*
+** Lua语言要执行一个Lua的脚本文件,则核心要做四件事情:文件读取、解析成语法Token、编译成二进制操作码、执行二进制操作码
+** Lua是解释型语言,通过对Lua的语言进行语法解析,然后生成二进制字节码,然后转由C语言进行执行操作
+** 编译型语言,则会进行编译后生成机器码,直接由机器进行执行即可,执行效率会比较高
+*/
+
 /* limit for table tag-method chains (to avoid loops) */
 #define MAXTAGLOOP	2000
 

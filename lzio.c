@@ -21,21 +21,27 @@
 #include "lzio.h"
 
 
+/*
+** 读取文件内容和buf填充
+*/
 int luaZ_fill (ZIO *z) {
   size_t size;
   lua_State *L = z->L;
   const char *buff;
   lua_unlock(L);
-  buff = z->reader(L, z->data, &size);
+  buff = z->reader(L, z->data, &size);  /* 文件读取,返回size大小 */
   lua_lock(L);
   if (buff == NULL || size == 0)
     return EOZ;
   z->n = size - 1;  /* discount char being returned */
-  z->p = buff;
+  z->p = buff;  /* 起始地址指向buf开始地址 */
   return cast_uchar(*(z->p++));
 }
 
 
+/*
+** ZIO初始化
+*/
 void luaZ_init (lua_State *L, ZIO *z, lua_Reader reader, void *data) {
   z->L = L;
   z->reader = reader;
