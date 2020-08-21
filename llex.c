@@ -30,6 +30,9 @@
 
 
 
+/*
+** next方法调用的是zgetc方法,逐个读取文件流中的数据,直到分割出一个完整的Token
+*/
 #define next(ls) (ls->current = zgetc(ls->z))
 
 
@@ -68,11 +71,18 @@ static void save (LexState *ls, int c) {
 }
 
 
+/*
+** Lua的Token分割器会将语法的保留字分割出来
+** 保留字是一个luaX_tokens类型的数组,对应了RESERVED里面的Token类型
+** 保留字模板初始化的时候,会将luaX_tokens上的字符串缓存到字符串池上
+** 被缓存的保留字,通过ts->extra保存对应的token类型,通过函数isreserved进行判断是否是保留字
+** 保留字模块的初始化,在f_luaopen中调用,luaX_init主要将保留字数组循环设置到字符串缓存池上
+*/
 void luaX_init (lua_State *L) {
   int i;
-  TString *e = luaS_newliteral(L, LUA_ENV);  /* create env name */
+  TString *e = luaS_newliteral(L, LUA_ENV);  /* create env name - 创建环境变量名称 */
   luaC_fix(L, obj2gco(e));  /* never collect this name */
-  for (i=0; i<NUM_RESERVED; i++) {
+  for (i=0; i<NUM_RESERVED; i++) {  /* 循环值从保留字循环值开始 */
     TString *ts = luaS_new(L, luaX_tokens[i]);
     luaC_fix(L, obj2gco(ts));  /* reserved words are never collected */
     ts->extra = cast_byte(i+1);  /* reserved word */
@@ -211,6 +221,7 @@ static int check_next2 (LexState *ls, const char *set) {
 /*
 ** this function is quite liberal in what it accepts, as 'luaO_str2num'
 ** will reject ill-formed numerals.
+** 读取数字类型,具体的数字放置在seminfo->i/seminfo->r上
 */
 static int read_numeral (LexState *ls, SemInfo *seminfo) {
   TValue obj;
@@ -233,7 +244,7 @@ static int read_numeral (LexState *ls, SemInfo *seminfo) {
   if (luaO_str2num(luaZ_buffer(ls->buff), &obj) == 0)  /* format error? */
     lexerror(ls, "malformed number", TK_FLT);
   if (ttisinteger(&obj)) {
-    seminfo->i = ivalue(&obj);
+    seminfo->i = ivalue(&obj);  /* 存储数字 */
     return TK_INT;
   }
   else {
@@ -431,12 +442,18 @@ static void read_string (LexState *ls, int del, SemInfo *seminfo) {
 ** 真正执行分割的函数
 ** 该函数是一个for循环,循环从文件buf中去读取数据
 ** for循环中,会调用next函数,会逐个读取字符
+** Token解析函数,逐个读取字符流
+** 其中next函数:从ZIO文件流上读取下一个字符
+** 完整一个Token的分割,则返回Token结果
+** llex是一个for循环状态机,通过循环读取文件流中的字符,进行Token的分割操作
+**    在分割到一个Token后,就会返回Token的类型和语义信息
+**    针对换行、空格等符号,则会跳过
 */
 static int llex (LexState *ls, SemInfo *seminfo) {
   luaZ_resetbuffer(ls->buff);
   for (;;) {
     switch (ls->current) {
-      case '\n': case '\r': {  /* line breaks */
+      case '\n': case '\r': {  /* line breaks - 换行符号,跳过 */
         inclinenumber(ls);
         break;
       }
@@ -463,7 +480,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
           next(ls);  /* skip until end of line (or end of file) */
         break;
       }
-      case '[': {  /* long string or simply '[' */
+      case '[': {  /* long string or simply '[' - 长字符串处理 */
         int sep = skip_sep(ls);
         if (sep >= 0) {
           read_long_string(ls, seminfo, sep);
@@ -473,7 +490,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
           lexerror(ls, "invalid long string delimiter", TK_STRING);
         return '[';
       }
-      case '=': {
+      case '=': {  /* == 处理 */
         next(ls);
         if (check_next1(ls, '=')) return TK_EQ;
         else return '=';
@@ -526,7 +543,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
       case EOZ: {
         return TK_EOS;
       }
-      default: {
+      default: {  /* 变量名称等处理/关键字 */
         if (lislalpha(ls->current)) {  /* identifier or reserved word? */
           TString *ts;
           do {
@@ -535,7 +552,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
           ts = luaX_newstring(ls, luaZ_buffer(ls->buff),
                                   luaZ_bufflen(ls->buff));
           seminfo->ts = ts;
-          if (isreserved(ts))  /* reserved word? */
+          if (isreserved(ts))  /* reserved word? - 保留关键字? */
             return ts->extra - 1 + FIRST_RESERVED;
           else {
             return TK_NAME;
