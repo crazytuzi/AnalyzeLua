@@ -108,14 +108,17 @@ struct BlockCnt;  /* defined in lparser.c */
 
 
 /* state needed to generate code for a given function */
+/*
+** 函数编译状态,该结构主要存储语法块、函数等编译过程状态信息
+*/
 typedef struct FuncState {
-  Proto *f;  /* current function header */
+  Proto *f;  /* current function header - 存放Opcode */
   struct FuncState *prev;  /* enclosing function */
-  struct LexState *ls;  /* lexical state */
-  struct BlockCnt *bl;  /* chain of current blocks */
-  int pc;  /* next position to code (equivalent to 'ncode') */
+  struct LexState *ls;  /* lexical state - 词法状态 */
+  struct BlockCnt *bl;  /* chain of current blocks - 当前块链 */
+  int pc;  /* next position to code (equivalent to 'ncode') - 代码的下一个位置,指向Proto->code中的数组指针 */
   int lasttarget;   /* 'label' of last 'jump label' */
-  int jpc;  /* list of pending jumps to 'pc' */
+  int jpc;  /* list of pending jumps to 'pc' - 即将跳转的pc列表 */
   int nk;  /* number of elements in 'k' */
   int np;  /* number of elements in 'p' */
   int firstlocal;  /* index of first local var (in Dyndata array) */

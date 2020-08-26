@@ -597,14 +597,25 @@ static int block_follow (LexState *ls, int withuntil) {
 
 
 /*
+** Lua语言解析和编译过程的入口函数是luaY_parser,而真正实现状态机的是在mainfunc函数中的statlist
+** statlist函数,主要通过while语句实现状态机的循环,通过luaX_next,逐个切割出语句Token,通过状态机循环,将语义转化成语句块,并逐个编译成二进制可执行指令Opcode
+** statlist有几个关键要点:
+**    状态机是通过语法块,然后逐块将代码解析成Opcode的,代码块如:if语句,for循环,function函数,表达式等
+**    语法块的判断是根据ls->t.token Token值来确定的,根据不同的Token确定不同语法块的起始位置
+**    状态机中也会调用luaX_next函数,不断切割Lua的语法Token,并在状态机中进行解析和编译
+**    语法块中,经常会遇到嵌套的语法块,此时会回调statlist函数,进行递归遍历
+*/
+
+/*
 ** 根据luaX_next分割器分割出来的Token,组装成语法块语法statement,最后将语法逐个组装成语法树
+** 语法树解析
 */
 static void statlist (LexState *ls) {
   /* statlist -> { stat [';'] } */
   while (!block_follow(ls, 1)) {
-    if (ls->t.token == TK_RETURN) {
+    if (ls->t.token == TK_RETURN) {  /* 只有遇到return标识的时候,状态机循环才会中断,否则会持续运行到语法解析完毕 */
       statement(ls);
-      return;  /* 'return' must be last statement */
+      return;  /* 'return' must be last statement - 最后一个语法块 */
     }
     statement(ls);
   }
@@ -1148,6 +1159,12 @@ static void check_conflict (LexState *ls, struct LHS_assign *lh, expdesc *v) {
 }
 
 
+/*
+** 变量赋值操作
+** ls - 语法解析上下文状态
+** lh - 变量名称存储在expdesc结构中,链表形式,可以存储多个变量名
+** nvars - 值的个数
+*/
 static void assignment (LexState *ls, struct LHS_assign *lh, int nvars) {
   expdesc e;
   check_condition(ls, vkisvar(lh->v.k), "syntax error");
@@ -1163,10 +1180,10 @@ static void assignment (LexState *ls, struct LHS_assign *lh, int nvars) {
   }
   else {  /* assignment -> '=' explist */
     int nexps;
-    checknext(ls, '=');
+    checknext(ls, '=');  /* 跳转到下一个Token */
     nexps = explist(ls, &e);
     if (nexps != nvars)
-      adjust_assign(ls, nvars, nexps, &e);
+      adjust_assign(ls, nvars, nexps, &e);  /* 调整 判断左边的变量数是否等于右边的值数 */
     else {
       luaK_setoneret(ls->fs, &e);  /* close last expression */
       luaK_storevar(ls->fs, &lh->v, &e);
@@ -1383,6 +1400,17 @@ static void forstat (LexState *ls, int line) {
 }
 
 
+/*
+** 通过luaX_next跳过IF/ELSEIF的token,然后调用expr方法处理条件问题
+** 条件语句最终会返回true/false的结果值,这个结果值会保存到expdesc结构中
+** expdesc结构贯穿整个Parse解析编译阶段,主要用于保存每次预发解析的详细信息的传递
+** 处理完条件语句后,会调用checknext,跳过THEN这个关键字Token,然后继续往下处理
+** 由于IF语句是一个判断语句,需要根据条件判断的情况,进行执行代码的跳转,
+** Lua是通过luaK_goiftrue函数,生成JMP类型的操作码,然后这个操作码最终也会调用luaK_codeABC函数,生成二进制代码,然后放到Proto上
+** 针对块的内容的解析,会递归回调statlist函数,因为块中的内容,有可能是简单的表达式赋值,也有可能是嵌套的函数、IF语句、FOR循环等
+** Lua是有作用域的,所以进入一个块的回调,会执行enterblock函数,离开则执行leaveblock函数
+** IF语句块中的块内容是一个表达式,调用statlist后,会进入表达式的处理函数exprstat中
+*/
 static void test_then_block (LexState *ls, int *escapelist) {
   /* test_then_block -> [IF | ELSEIF] cond THEN block */
   BlockCnt bl;
@@ -1390,11 +1418,11 @@ static void test_then_block (LexState *ls, int *escapelist) {
   expdesc v;
   int jf;  /* instruction to skip 'then' code (if condition is false) */
   luaX_next(ls);  /* skip IF or ELSEIF */
-  expr(ls, &v);  /* read condition */
+  expr(ls, &v);  /* read condition - 条件语句读取,返回结果值存储在v中 */
   checknext(ls, TK_THEN);
   if (ls->t.token == TK_GOTO || ls->t.token == TK_BREAK) {
     luaK_goiffalse(ls->fs, &v);  /* will jump to label if condition is true */
-    enterblock(fs, &bl, 0);  /* must enter block before 'goto' */
+    enterblock(fs, &bl, 0);  /* must enter block before 'goto' - 用于管理递归块管理 */
     gotostat(ls, v.t);  /* handle goto/break */
     while (testnext(ls, ';')) {}  /* skip colons */
     if (block_follow(ls, 0)) {  /* 'goto' is the entire block? */
@@ -1409,7 +1437,7 @@ static void test_then_block (LexState *ls, int *escapelist) {
     enterblock(fs, &bl, 0);
     jf = v.f;
   }
-  statlist(ls);  /* 'then' part */
+  statlist(ls);  /* 'then' part - 状态机继续解析IF语句块内语义 */
   leaveblock(fs);
   if (ls->t.token == TK_ELSE ||
       ls->t.token == TK_ELSEIF)  /* followed by 'else'/'elseif'? */
@@ -1418,14 +1446,20 @@ static void test_then_block (LexState *ls, int *escapelist) {
 }
 
 
+/*
+** 主要通过test_then_block函数,处理IF (cond) THEN block的语法问题
+** 通过while循环遍历elseif语句,elseif的处理方式也是采用test_then_block方法
+** 解析if语句
+** if exp then block {elseif exp then block} [else block] end
+*/
 static void ifstat (LexState *ls, int line) {
   /* ifstat -> IF cond THEN block {ELSEIF cond THEN block} [ELSE block] END */
-  FuncState *fs = ls->fs;
+  FuncState *fs = ls->fs;  /* 获取函数栈 */
   int escapelist = NO_JUMP;  /* exit list for finished parts */
-  test_then_block(ls, &escapelist);  /* IF cond THEN block */
-  while (ls->t.token == TK_ELSEIF)
+  test_then_block(ls, &escapelist);  /* IF cond THEN block - 首先解析 if 条件 then 逻辑快 end */
+  while (ls->t.token == TK_ELSEIF)  /* 然后解析 elseif 条件 then 逻辑块 end */
     test_then_block(ls, &escapelist);  /* ELSEIF cond THEN block */
-  if (testnext(ls, TK_ELSE))
+  if (testnext(ls, TK_ELSE))  /* 最后解析 else 逻辑块 end */
     block(ls);  /* 'else' part */
   check_match(ls, TK_END, TK_IF, line);
   luaK_patchtohere(fs, escapelist);  /* patch escape list to 'if' end */
@@ -1489,14 +1523,25 @@ static void funcstat (LexState *ls, int line) {
 }
 
 
+/*
+** exprstat普通表达式处理逻辑相对比较清晰,主要两个步骤:
+**    1.处理变量名称,可能有多个变量名(LHS_assign).
+**    2.进行变量赋值,生成Opcode
+** suffixedexp函数会将变量名信息存储在LHS_assign v结构上,assignment就是真正变量赋值操作,也就是生成Opcode操作
+** assignment函数中,主要通过luaK_storevar对变量进行设置值,
+**    luaK_storevar函数底层也是调用luaK_codeABC函数,当然不同类型的变量处理逻辑是有一些不同的
+** Lua的变量逻辑:
+**    Lua中的变量全是全局变量,无论语句块或是函数里,除非用local显示声明为局部变量,变量默认值均为nil
+**    使用local创建一个局部变量,与全局变量不同,局部变量只在被声明的那个代码块内有效
+*/
 static void exprstat (LexState *ls) {
   /* stat -> func | assignment */
   FuncState *fs = ls->fs;
-  struct LHS_assign v;
-  suffixedexp(ls, &v.v);
-  if (ls->t.token == '=' || ls->t.token == ',') { /* stat -> assignment ? */
+  struct LHS_assign v;  /* 处理多个值 */
+  suffixedexp(ls, &v.v);  /* 处理变量名 */
+  if (ls->t.token == '=' || ls->t.token == ',') { /* stat -> assignment ? - 变量赋值处理 */
     v.prev = NULL;
-    assignment(ls, &v, 1);
+    assignment(ls, &v, 1);  /* 赋值 */
   }
   else {  /* stat -> func */
     check_condition(ls, v.v.k == VCALL, "syntax error");
@@ -1538,9 +1583,18 @@ static void retstat (LexState *ls) {
 }
 
 
+/*
+** statement函数主要状态机的执行函数,通过switch方法,针对不同的Token值,执行不同的语法块处理
+** Lua语言是有作用域的概念的,所以进入一个语法块的时候,会执行enterlevel,离开一个语法块的时候,调用leavelevel函数
+** 如果命中了某一个语法块,则进入对应的语法块处理逻辑(例如ifstat),默认情况下,会进入表达式的处理流程exprstat
+*/
+
+/*
+** 解析语法树,按照块状分割
+*/
 static void statement (LexState *ls) {
   int line = ls->linenumber;  /* may be needed for error messages */
-  enterlevel(ls);
+  enterlevel(ls);  /* 进入作用域 */
   switch (ls->t.token) {
     case ';': {  /* stat -> ';' (empty statement) */
       luaX_next(ls);  /* skip ';' */
@@ -1603,7 +1657,7 @@ static void statement (LexState *ls) {
   lua_assert(ls->fs->f->maxstacksize >= ls->fs->freereg &&
              ls->fs->freereg >= ls->fs->nactvar);
   ls->fs->freereg = ls->fs->nactvar;  /* free registers */
-  leavelevel(ls);
+  leavelevel(ls);  /* 离开作用域 */
 }
 
 /* }====================================================================== */
@@ -1626,6 +1680,13 @@ static void mainfunc (LexState *ls, FuncState *fs) {
   close_func(ls);
 }
 
+
+/*
+** Lua的代码是一边解析,一边编译,生成二进制字节码指令Opcode的,Opcode会放置在FunState->Proto结构中的code数组上
+** Lua文件的解析通过LexState结构来管理整体的语法解析状态
+** 语法块和函数的的编译,则通过FunState结构来管理
+** 编译出来的二进制指令集,则保存在Proto结构中的code数组上
+*/
 
 /*
 ** 真正执行语法树解析

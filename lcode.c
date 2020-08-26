@@ -290,6 +290,9 @@ void luaK_patchclose (FuncState *fs, int list, int level) {
 /*
 ** Emit instruction 'i', checking for array sizes and saving also its
 ** line information. Return 'i' position.
+** 将指令设置到Proto->code上
+** 其中f->code数组用于存放code
+** fs->ps主要是计数器,标记code的个数及数组下标
 */
 static int luaK_code (FuncState *fs, Instruction i) {
   Proto *f = fs->f;
@@ -309,6 +312,7 @@ static int luaK_code (FuncState *fs, Instruction i) {
 /*
 ** Format and emit an 'iABC' instruction. (Assertions check consistency
 ** of parameters versus opcode.)
+** 主要封装了指令的生成函数
 */
 int luaK_codeABC (FuncState *fs, OpCode o, int a, int b, int c) {
   lua_assert(getOpMode(o) == iABC);

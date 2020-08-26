@@ -113,6 +113,9 @@ enum OpMode {iABC, iABx, iAsBx, iAx};  /* basic instruction format */
 #define SETARG_sBx(i,b)	SETARG_Bx((i),cast(unsigned int, (b)+MAXARG_sBx))
 
 
+/*
+** 宏生成操作指令
+*/
 #define CREATE_ABC(o,a,b,c)	((cast(Instruction, o)<<POS_OP) \
 			| (cast(Instruction, a)<<POS_A) \
 			| (cast(Instruction, b)<<POS_B) \

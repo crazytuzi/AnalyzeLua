@@ -405,22 +405,26 @@ typedef struct LocVar {
 
 /*
 ** Function Prototypes
+** 主要存放二进制的字节码指令集(Opcode),字节码指令集主要存储在code的数组上
+** FuncState->pc指向下一个code的地址
+** Proto结构挂载在FuncState函数栈状态结构上
+** Lua在解析函数的过程中,会将一条条语句逐个编译成指令集
 */
 typedef struct Proto {
   CommonHeader;
-  lu_byte numparams;  /* number of fixed parameters */
+  lu_byte numparams;  /* number of fixed parameters - 定参个数 */
   lu_byte is_vararg;
-  lu_byte maxstacksize;  /* number of registers needed by this function */
+  lu_byte maxstacksize;  /* number of registers needed by this function - 栈个数 */
   int sizeupvalues;  /* size of 'upvalues' */
   int sizek;  /* size of 'k' */
-  int sizecode;
+  int sizecode;  /* code个数 */
   int sizelineinfo;
   int sizep;  /* size of 'p' */
   int sizelocvars;
   int linedefined;  /* debug information  */
   int lastlinedefined;  /* debug information  */
-  TValue *k;  /* constants used by the function */
-  Instruction *code;  /* opcodes */
+  TValue *k;  /* constants used by the function - 常量表 */
+  Instruction *code;  /* opcodes - 存储指令集数组 */
   struct Proto **p;  /* functions defined inside the function */
   int *lineinfo;  /* map from opcodes to source lines (debug information) */
   LocVar *locvars;  /* information about local variables (debug information) */
