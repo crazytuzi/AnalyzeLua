@@ -310,6 +310,11 @@ static int luaK_code (FuncState *fs, Instruction i) {
 
 
 /*
+** luaK_codeABC和luaK_codeABx函数是最基础的生成Opcode指令集的函数
+** 两个函数都调用CREATE_AB*宏函数,实现Opcode生成,并通过luaK_code函数将指令集存放到Proto->code[n]数组上
+*/
+
+/*
 ** Format and emit an 'iABC' instruction. (Assertions check consistency
 ** of parameters versus opcode.)
 ** 主要封装了指令的生成函数
@@ -429,6 +434,7 @@ static void freeexps (FuncState *fs, expdesc *e1, expdesc *e2) {
 ** and try to reuse constants. Because some values should not be used
 ** as keys (nil cannot be a key, integer keys can collapse with float
 ** keys), the caller must provide a useful 'key' for indexing the cache.
+** 处理常量
 */
 static int addk (FuncState *fs, TValue *key, TValue *v) {
   lua_State *L = fs->ls->L;

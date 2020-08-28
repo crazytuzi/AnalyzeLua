@@ -35,19 +35,19 @@ enum OpMode {iABC, iABx, iAsBx, iAx};  /* basic instruction format */
 /*
 ** size and position of opcode arguments.
 */
-#define SIZE_C		9
-#define SIZE_B		9
+#define SIZE_C		9  /* 指令C */
+#define SIZE_B		9  /* 指令B */
 #define SIZE_Bx		(SIZE_C + SIZE_B)
-#define SIZE_A		8
+#define SIZE_A		8  /* 指令A */
 #define SIZE_Ax		(SIZE_C + SIZE_B + SIZE_A)
 
-#define SIZE_OP		6
+#define SIZE_OP		6  /* 操作符 */
 
 #define POS_OP		0
-#define POS_A		(POS_OP + SIZE_OP)
-#define POS_C		(POS_A + SIZE_A)
-#define POS_B		(POS_C + SIZE_C)
-#define POS_Bx		POS_C
+#define POS_A		(POS_OP + SIZE_OP)  /* 6 */
+#define POS_C		(POS_A + SIZE_A)  /* 14 */
+#define POS_B		(POS_C + SIZE_C)  /* 23 */
+#define POS_Bx		POS_C  /* 14 */
 #define POS_Ax		POS_A
 
 
@@ -237,7 +237,7 @@ OP_EXTRAARG/*	Ax	extra (larger) argument for previous opcode	*/
 } OpCode;
 
 
-#define NUM_OPCODES	(cast(int, OP_EXTRAARG) + 1)
+#define NUM_OPCODES	(cast(int, OP_EXTRAARG) + 1)  /* 操作指令从0开始计算,所以总的值是OP_EXTRAARG + 1 */
 
 
 
