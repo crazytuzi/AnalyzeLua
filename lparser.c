@@ -173,6 +173,9 @@ static int registerlocalvar (LexState *ls, TString *varname) {
 }
 
 
+/*
+** 生成局部变量名称的数组
+*/
 static void new_localvar (LexState *ls, TString *name) {
   FuncState *fs = ls->fs;
   Dyndata *dyd = ls->dyd;
@@ -263,23 +266,30 @@ static void markupval (FuncState *fs, int level) {
   bl->upval = 1;
 }
 
+/*
+** 局部变量local:通过状态机里面TK_LOCAL分支逻辑,将变量name存放到Proto->locvars[]数组上
+**    通过searchvar函数,查询局部变量的数组表,找到对应的数组下标
+** 全局变量upvalue:Lua语言中,只要没有local表示的变量都为全局变量,不受代码块的限制和影响
+**    如果变量是全局变量,则通过searchupvalue函数查询全局变量名称,如果没有找到则通过newupvalue函数,
+**    到Proto->upvalues[]数组上,创建一个值
+*/
 
 /*
   Find variable with given name 'n'. If it is an upvalue, add this
   upvalue into all intermediate functions.
 */
 static void singlevaraux (FuncState *fs, TString *n, expdesc *var, int base) {
-  if (fs == NULL)  /* no more levels? */
-    init_exp(var, VVOID, 0);  /* default is global */
+  if (fs == NULL)  /* no more levels? - 全局变量 */
+    init_exp(var, VVOID, 0);  /* default is global - 全局变量 */
   else {
-    int v = searchvar(fs, n);  /* look up locals at current level */
+    int v = searchvar(fs, n);  /* look up locals at current level - 从函数局部变量中查找局部变量值 */
     if (v >= 0) {  /* found? */
-      init_exp(var, VLOCAL, v);  /* variable is local */
+      init_exp(var, VLOCAL, v);  /* variable is local - 局部变量 */
       if (!base)
         markupval(fs, v);  /* local will be used as an upval */
     }
     else {  /* not found as local at current level; try upvalues */
-      int idx = searchupvalue(fs, n);  /* try existing upvalues */
+      int idx = searchupvalue(fs, n);  /* try existing upvalues - 查询全局变量,如果没有找到全局变量,则newupvalue重新生成 */
       if (idx < 0) {  /* not found? */
         singlevaraux(fs->prev, n, var, 0);  /* try upper levels */
         if (var->k == VVOID)  /* not found? */
@@ -293,10 +303,14 @@ static void singlevaraux (FuncState *fs, TString *n, expdesc *var, int base) {
 }
 
 
+/*
+** 通过str_checkname函数,获取变量名称的字符串内存地址
+** 通过singlevaraux处理局部变量local和全局变量upvalue
+*/
 static void singlevar (LexState *ls, expdesc *var) {
-  TString *varname = str_checkname(ls);
+  TString *varname = str_checkname(ls);  /* 获取变量名称,获取的时候执行luaX_next */
   FuncState *fs = ls->fs;
-  singlevaraux(fs, varname, var, 1);
+  singlevaraux(fs, varname, var, 1);  /* 判断变量类型,是local还是upvalue */
   if (var->k == VVOID) {  /* global name? */
     expdesc key;
     singlevaraux(fs, ls->envn, var, 1);  /* get environment variable */
@@ -905,6 +919,9 @@ static void primaryexp (LexState *ls, expdesc *v) {
 }
 
 
+/*
+** 主要用来处理赋值变量名称,判断变量的类型:局部变量、全局变量、Table格式、函数等
+*/
 static void suffixedexp (LexState *ls, expdesc *v) {
   /* suffixedexp ->
        primaryexp { '.' NAME | '[' exp ']' | ':' NAME funcargs | funcargs } */
@@ -1164,6 +1181,8 @@ static void check_conflict (LexState *ls, struct LHS_assign *lh, expdesc *v) {
 ** ls - 语法解析上下文状态
 ** lh - 变量名称存储在expdesc结构中,链表形式,可以存储多个变量名
 ** nvars - 值的个数
+** 如果变量有多个值赋值,则会递归调用assignment函数,直到多个值都赋值完毕
+** 正常情况下,就会进行=号的赋值操作,主要调用luaK_storevar函数,实现各种生成工作
 */
 static void assignment (LexState *ls, struct LHS_assign *lh, int nvars) {
   expdesc e;

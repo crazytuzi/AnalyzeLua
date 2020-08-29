@@ -602,6 +602,10 @@ void luaK_dischargevars (FuncState *fs, expdesc *e) {
 /*
 ** Ensures expression value is in register 'reg' (and therefore
 ** 'e' will become a non-relocatable expression).
+** 底层赋值的操作函数,针对值的不同类型进行不同的封装操作码
+** 布尔类型:通过luaK_codeABC函数,封装OP_LOADBOOL操作符,参数A为变量名称,参数B为布尔值
+** 对象赋值:如果是两个对象变量之间的赋值,则会封装操作符,参数A为变量名称,参数B为赋值变量对象地址
+** 全局变量:全局变量OP_SETVAL操作符,参数A为值,参数B为变量名称值
 */
 static void discharge2reg (FuncState *fs, expdesc *e, int reg) {
   luaK_dischargevars(fs, e);
@@ -789,20 +793,25 @@ int luaK_exp2RK (FuncState *fs, expdesc *e) {
 
 /*
 ** Generate code to store result of expression 'ex' into variable 'var'.
+** 通过变量的类型,来区分不同的操作,主要分为:局部变量、全局变量、下标类型
+** 局部变量:主要调用exp2reg函数,该函数底层调用discharge2reg函数,通过值的不同类型,来实现不同的操作码生成操作
+** 全局变量:全局变量首先会调用luaK_exp2anyreg函数,实际底层也是调用了exp2reg函数,针对不同值类型进行不同的操作码封装操作,
+**    然后调用luaK_codeABC函数,进行OP_SETUPVAL全局变量的设置操作
+** 下标类型:通过变量类型,来确定OP_SETTABLE或者OP_SETTABUP操作符,并调用luaK_codeABC函数进行操作码封装
 */
 void luaK_storevar (FuncState *fs, expdesc *var, expdesc *ex) {
   switch (var->k) {
-    case VLOCAL: {
+    case VLOCAL: {  /* 局部变量,需要声明local标识 */
       freeexp(fs, ex);
-      exp2reg(fs, ex, var->u.info);  /* compute 'ex' into proper place */
+      exp2reg(fs, ex, var->u.info);  /* compute 'ex' into proper place - A = 结果 B = 变量 */
       return;
     }
-    case VUPVAL: {
-      int e = luaK_exp2anyreg(fs, ex);
-      luaK_codeABC(fs, OP_SETUPVAL, e, var->u.info, 0);
+    case VUPVAL: {  /* Lua除了局部变量外,都是全局变量 */
+      int e = luaK_exp2anyreg(fs, ex);  /* 底层也是调用exp2reg函数,主要用于将值设置到变量上 */
+      luaK_codeABC(fs, OP_SETUPVAL, e, var->u.info, 0);  /* 设置全局变量 */
       break;
     }
-    case VINDEXED: {
+    case VINDEXED: {  /* 下标类型 */
       OpCode op = (var->u.ind.vt == VLOCAL) ? OP_SETTABLE : OP_SETTABUP;
       int e = luaK_exp2RK(fs, ex);
       luaK_codeABC(fs, op, var->u.ind.t, var->u.ind.idx, e);

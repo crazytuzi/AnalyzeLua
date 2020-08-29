@@ -729,6 +729,7 @@ void luaV_finishOp (lua_State *L) {
 
 /*
 ** some macros for common tasks in 'luaV_execute'
+** 获取二进制操作码的Opcode值和参数A、B、C
 */
 
 
@@ -790,6 +791,12 @@ void luaV_finishOp (lua_State *L) {
 
 
 
+/*
+** luaV_execute函数是一个循环遍历的状态机,通过遍历二进制操作码的数组,逐个执行指令
+** 不同的Opcode的类型,执行的数据操作和栈操作是不一样,通过switch case进行选择操作
+** 遍历的是ci->u.l.savedpc,而非Proto->code数组
+**    其实在luaD_precall函数中,进行了赋值操作ci->u.l.savedpc = p->code
+*/
 void luaV_execute (lua_State *L) {
   CallInfo *ci = L->ci;
   LClosure *cl;
@@ -807,7 +814,13 @@ void luaV_execute (lua_State *L) {
     StkId ra;
     vmfetch();
     vmdispatch (GET_OPCODE(i)) {
-      vmcase(OP_MOVE) {
+      vmcase(OP_MOVE) {  /* 变量赋值 */
+/*
+** OP_MOVE操作是一个对象变量之间的赋值操作
+** ra - 操作码中的A操作,通过RA函数获取
+** rb - 操作码中的B参数,通过RB函数获取
+** 通过setobjs2s函数,将rb对象设置到ra上
+*/
         setobjs2s(L, ra, RB(i));
         vmbreak;
       }
@@ -823,7 +836,7 @@ void luaV_execute (lua_State *L) {
         setobj2s(L, ra, rb);
         vmbreak;
       }
-      vmcase(OP_LOADBOOL) {
+      vmcase(OP_LOADBOOL) {  /* 加载布尔值 */
         setbvalue(ra, GETARG_B(i));
         if (GETARG_C(i)) ci->u.l.savedpc++;  /* skip next instruction (if C) */
         vmbreak;
@@ -859,7 +872,7 @@ void luaV_execute (lua_State *L) {
         settableProtected(L, upval, rb, rc);
         vmbreak;
       }
-      vmcase(OP_SETUPVAL) {
+      vmcase(OP_SETUPVAL) {  /* 设置全局变量 */
         UpVal *uv = cl->upvals[GETARG_B(i)];
         setobj(L, uv->v, ra);
         luaC_upvalbarrier(L, uv);
